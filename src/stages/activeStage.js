@@ -24,7 +24,8 @@ const stageMapping = {
   2: "pstadium",
   3: "dreamland",
   4: "fdest",
-  5: "fountain"
+  5: "fountain",
+  6: "megabattlefield"
 };
 
 export function setVsStage(val) {

@@ -4,6 +4,7 @@ import pstadium from 'stages/vs-stages/pstadium';
 import ystory from 'stages/vs-stages/ystory';
 import fdest from 'stages/vs-stages/fdest';
 import fountain from 'stages/vs-stages/fountain';
+import megabattlefield from 'stages/vs-stages/megabattlefield';
 
 export default {
   battlefield,
@@ -11,5 +12,6 @@ export default {
   pstadium,
   ystory,
   fdest,
-  fountain
+  fountain,
+  megabattlefield
 };

@@ -16,7 +16,8 @@ const smallBoxStageNames = [
   "P-STADIUM",
   "DREAMLAND",
   "F-DEST",
-  "FOUNTAIN"
+  "FOUNTAIN",
+  "MEGA-BF"
 ];
 
 const bigBoxNames = [
@@ -25,7 +26,8 @@ const bigBoxNames = [
   "Pokemon Stadium",
   "Dreamland",
   "Final Destination",
-  "Fountain Of Dreams"
+  "Fountain Of Dreams",
+  "Mega Battlefield"
 ];
 
 const stageImages = {
@@ -35,6 +37,7 @@ const stageImages = {
   3:retrieveImage( "assets/stage-icons/dl.png"),
   4:retrieveImage( "assets/stage-icons/fd.png"),
   5:retrieveImage( "assets/stage-icons/fod.png"),
+  6:retrieveImage( "assets/stage-icons/bf.png"),
 };
 
 function retrieveImage(src){
