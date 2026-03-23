@@ -1,7 +1,7 @@
 import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports} from "main/main";
 
 import {gameSettings} from "settings";
-import {sounds} from "main/sfx";
+import {sounds, setCurrentSfxPlayer} from "main/sfx";
 import {turnOffHitboxes, actionStates} from "physics/actionStateShortcuts";
 import {drawVfx} from "main/vfx/drawVfx";
 import {Vec2D} from "../main/util/Vec2D";
@@ -776,6 +776,8 @@ export function executeHits (input){
     // start defining constants for hit
     const v = hitQueue[i][0];
     const a = hitQueue[i][1];
+    // Set sound proximity to victim so hit sounds attenuate by distance
+    setCurrentSfxPlayer(v);
     // h will contain hitbox type for stage damage
     const h = hitQueue[i][2];
     const shieldHit = hitQueue[i][3];

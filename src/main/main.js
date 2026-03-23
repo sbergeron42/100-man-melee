@@ -4,7 +4,7 @@ import {playerObject} from 'main/player';
 import {keyMap} from 'settings';
 import {drawStartUp} from 'menus/startup';
 import {menuMove, drawMainMenuInit, drawMainMenu} from "menus/menu";
-import {sounds} from "main/sfx";
+import {sounds, resetSfxThrottle, setCurrentSfxPlayer, getCurrentSfxPlayer} from "main/sfx";
 import {drawStartScreenInit, drawStartScreen} from "menus/startscreen";
 import {drawBackgroundInit, drawStageInit, drawBackground, drawStage, setBackgroundType, createSnow} from "stages/stagerender";
 import {drawSSSInit, sssControls, drawSSS} from "menus/stageselect";
@@ -385,6 +385,15 @@ export function matchTimerTick (input){
 }
 
 export function screenShake (kb){
+  // Skip screen shake for off-screen events in battle royale
+  if (cameraEnabled) {
+    var sfxPlayer = getCurrentSfxPlayer();
+    if (sfxPlayer > 0 && player[sfxPlayer] && player[sfxPlayer].phys) {
+      if (!isOnScreen(player[sfxPlayer].phys.pos.x, player[sfxPlayer].phys.pos.y)) {
+        return;
+      }
+    }
+  }
   var seed = [Math.random(),Math.random(),Math.random(),Math.random()];
   fg1.translate(kb*0.1*seed[0],kb*0.1*seed[1]);
   setTimeout(function(){fg1.translate(-kb*0.05*seed[0],-kb*0.05*seed[1])},20);
@@ -401,6 +410,165 @@ export function percentShake (kb,i){
   setTimeout(function(){player[i].percentShake = new Vec2D(0,0)},80);
 }
 
+
+// --- Blastzone Shrink System ---
+var bzShrinkTimer = 0;
+var bzShrinkInterval = 3600; // frames between shrinks (60fps * 60sec = 1 minute)
+var bzShrinkAmount = 60;     // game units to shrink each side per interval
+var bzOriginal = null;       // original blastzone saved at game start
+var bzShrinkCount = 0;
+
+export function resetBlastzoneShrink() {
+  bzShrinkTimer = 0;
+  bzShrinkCount = 0;
+  var stage = getActiveStage();
+  if (stage && stage.blastzone) {
+    bzOriginal = {
+      minX: stage.blastzone.min.x,
+      minY: stage.blastzone.min.y,
+      maxX: stage.blastzone.max.x,
+      maxY: stage.blastzone.max.y
+    };
+  }
+}
+
+export function updateBlastzoneShrink() {
+  var stage = getActiveStage();
+  if (!stage || !stage.blastzone || !bzOriginal) return;
+
+  bzShrinkTimer++;
+  if (bzShrinkTimer >= bzShrinkInterval) {
+    bzShrinkTimer = 0;
+    bzShrinkCount++;
+
+    // Blastzone shrink schedule:
+    // Minute 0-2: fast shrink from original (1000) to 650 wide
+    // Minute 2+: linear shrink from 650 down to minimum
+    var minWidth = 200;
+    var minHeight = 120;
+    var origW = bzOriginal.maxX - bzOriginal.minX;   // e.g. 1000
+    var origH = bzOriginal.maxY - bzOriginal.minY;   // e.g. 500
+    var phase1End = 2;     // minutes for fast phase
+    var phase1TargetW = 650;
+    var phase1TargetH = origH * (phase1TargetW / origW); // proportional
+    var phase2Rate = 50;   // units of width removed per minute after phase 1
+
+    var minutes = bzShrinkCount; // each count = 1 minute
+    var targetW, targetH;
+
+    if (minutes <= phase1End) {
+      // Linear interpolation from original to phase1 target over 2 minutes
+      var t = minutes / phase1End;
+      targetW = origW - t * (origW - phase1TargetW);
+      targetH = origH - t * (origH - phase1TargetH);
+    } else {
+      // Linear shrink from phase1 target
+      var extraMinutes = minutes - phase1End;
+      targetW = phase1TargetW - extraMinutes * phase2Rate;
+      targetH = phase1TargetH - extraMinutes * (phase2Rate * origH / origW);
+    }
+
+    targetW = Math.max(targetW, minWidth);
+    targetH = Math.max(targetH, minHeight);
+
+    var cx = (bzOriginal.minX + bzOriginal.maxX) / 2;
+    var cy = (bzOriginal.minY + bzOriginal.maxY) / 2;
+    stage.blastzone.min.x = cx - targetW / 2;
+    stage.blastzone.max.x = cx + targetW / 2;
+    stage.blastzone.min.y = cy - targetH / 2;
+    stage.blastzone.max.y = cy + targetH / 2;
+
+    console.log("Blastzone shrink #" + bzShrinkCount + ": [" +
+      Math.round(stage.blastzone.min.x) + "," + Math.round(stage.blastzone.min.y) + "] to [" +
+      Math.round(stage.blastzone.max.x) + "," + Math.round(stage.blastzone.max.y) + "]");
+  }
+}
+
+function computeNextBlastzone() {
+  // Calculate what the blastzone will be after the next shrink
+  if (!bzOriginal) return null;
+  var nextCount = bzShrinkCount + 1;
+  var origW = bzOriginal.maxX - bzOriginal.minX;
+  var origH = bzOriginal.maxY - bzOriginal.minY;
+  var phase1End = 2;
+  var phase1TargetW = 650;
+  var phase1TargetH = origH * (phase1TargetW / origW);
+  var phase2Rate = 50;
+  var minWidth = 200;
+  var minHeight = 120;
+  var targetW, targetH;
+  if (nextCount <= phase1End) {
+    var t = nextCount / phase1End;
+    targetW = origW - t * (origW - phase1TargetW);
+    targetH = origH - t * (origH - phase1TargetH);
+  } else {
+    var extraMinutes = nextCount - phase1End;
+    targetW = phase1TargetW - extraMinutes * phase2Rate;
+    targetH = phase1TargetH - extraMinutes * (phase2Rate * origH / origW);
+  }
+  targetW = Math.max(targetW, minWidth);
+  targetH = Math.max(targetH, minHeight);
+  var cx = (bzOriginal.minX + bzOriginal.maxX) / 2;
+  var cy = (bzOriginal.minY + bzOriginal.maxY) / 2;
+  return { minX: cx - targetW / 2, maxX: cx + targetW / 2, minY: cy - targetH / 2, maxY: cy + targetH / 2 };
+}
+
+function drawBzRect(bz, s, ox, oy) {
+  var lx = bz.minX * s + ox;
+  var rx = bz.maxX * s + ox;
+  var ty = bz.maxY * -s + oy;
+  var by = bz.minY * -s + oy;
+  fg2.beginPath();
+  fg2.moveTo(lx, ty); fg2.lineTo(rx, ty);
+  fg2.lineTo(rx, by); fg2.lineTo(lx, by);
+  fg2.closePath();
+  fg2.stroke();
+}
+
+var bzWarningFrames = 600; // 10 seconds at 60fps
+
+export function renderBlastzoneWarning() {
+  var stage = getActiveStage();
+  if (!stage || !stage.blastzone || !bzOriginal) return;
+
+  var s = stage.scale;
+  var ox = stage.offset[0];
+  var oy = stage.offset[1];
+  var bz = stage.blastzone;
+  var framesUntilShrink = bzShrinkInterval - bzShrinkTimer;
+  var isWarning = framesUntilShrink <= bzWarningFrames;
+
+  // Always draw current blastzone — solid red
+  fg2.strokeStyle = "rgba(255, 50, 50, 0.4)";
+  fg2.lineWidth = 2;
+  fg2.setLineDash([10, 10]);
+  drawBzRect({ minX: bz.min.x, maxX: bz.max.x, minY: bz.min.y, maxY: bz.max.y }, s, ox, oy);
+
+  // During warning period: blink upcoming boundary in yellow
+  if (isWarning) {
+    var blink = Math.floor(framesUntilShrink / 15) % 2 === 0; // blink every 15 frames
+    if (blink) {
+      var next = computeNextBlastzone();
+      if (next) {
+        fg2.strokeStyle = "rgba(255, 230, 0, 0.7)";
+        fg2.lineWidth = 3;
+        fg2.setLineDash([8, 8]);
+        drawBzRect(next, s, ox, oy);
+      }
+    }
+
+    // Also make current boundary blink red brighter
+    if (!blink) {
+      fg2.strokeStyle = "rgba(255, 50, 50, 0.8)";
+      fg2.lineWidth = 3;
+      fg2.setLineDash([10, 10]);
+      drawBzRect({ minX: bz.min.x, maxX: bz.max.x, minY: bz.min.y, maxY: bz.max.y }, s, ox, oy);
+    }
+  }
+
+  fg2.setLineDash([]);
+}
+// --- End Blastzone Shrink ---
 
 export function renderMinimap() {
   var mmW = 200;
@@ -1084,6 +1252,7 @@ let tickMsAccum = 0;
 export function gameTick (oldInputBuffers){
   var start = performance.now();
   var diff = 0;
+  resetSfxThrottle();
 
   // Track game tick rate
   tickCount++;
@@ -1248,19 +1417,23 @@ export function gameTick (oldInputBuffers){
 
     for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
+        setCurrentSfxPlayer(i);
         if(!starting) {
           input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
         }
         update(i,input);
       }
     }
+    setCurrentSfxPlayer(-1);
     checkPhantoms();
     rebuildSpatialGrid();
     for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
+        setCurrentSfxPlayer(i);
         hitDetect(i,input);
       }
     }
+    setCurrentSfxPlayer(-1);
     executeHits(input);
     articlesHitDetection();
     executeArticleHits(input);
@@ -1271,6 +1444,10 @@ export function gameTick (oldInputBuffers){
       if (startTimer < 0) {
         starting = false;
       }
+    }
+    // Blastzone shrink for battle royale
+    if (!starting && ports > 4) {
+      updateBlastzoneShrink();
     }
     if (frameByFrame) {
       frameByFrameRender = true;
@@ -1468,6 +1645,11 @@ export function renderTick (){
       }
       renderArticles();
       renderVfx();
+
+      // Draw blastzone boundary lines
+      if (ports > 4) {
+        renderBlastzoneWarning();
+      }
 
       bg2.restore();
       fg2.restore();
@@ -1686,6 +1868,7 @@ export function startGame (){
   });
   findingPlayers = false;
   playing = true;
+  resetBlastzoneShrink();
 
   // Auto-enable camera for large stages or many players
   if (stageSelect === 6 || ports > 4) {
@@ -1695,6 +1878,14 @@ export function startGame (){
 
 export function endGame (input){
   disableCamera();
+  // Restore original blastzone
+  var stageEnd = getActiveStage();
+  if (stageEnd && stageEnd.blastzone && bzOriginal) {
+    stageEnd.blastzone.min.x = bzOriginal.minX;
+    stageEnd.blastzone.min.y = bzOriginal.minY;
+    stageEnd.blastzone.max.x = bzOriginal.maxX;
+    stageEnd.blastzone.max.y = bzOriginal.maxY;
+  }
   gameEnd = false;
   resetLostStockQueue();
     setPhantonQueue([]);

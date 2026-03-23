@@ -1,7 +1,7 @@
 
-import {player, fg2, playerType, characterSelections, screenShake, percentShake} from "main/main";
+import {player, fg2, playerType, characterSelections, screenShake, percentShake, ports} from "main/main";
 import {rotateVector} from "main/render";
-import {sounds} from "main/sfx";
+import {sounds, setCurrentSfxPlayer} from "main/sfx";
 import {knockbackSounds, segmentSegmentCollision, getKnockback, getHitstun} from "physics/hitDetection";
 import {findCollision} from "./environmentalCollision";
 import {moveECB} from "../main/util/ecbTransform";
@@ -201,7 +201,7 @@ export function articlesHitDetection (){
         } else {
             var interpolate = false;
         }
-        for (var v = 0; v < 4; v++) {
+        for (var v = 0; v < ports; v++) {
             var inHitList = false;
             for (var n = 0; n < 4; n++) {
                 if (v == aArticles[a].instance.hitList[n]) {
@@ -321,6 +321,7 @@ export function executeArticleHits (input){
         var v = articleHitQueue[i][1];
         var shieldHit = articleHitQueue[i][2];
         var o = aArticles[a].player;
+        setCurrentSfxPlayer(v);
         var hb = aArticles[a].instance.hb;
 
         var damage = hb.dmg;

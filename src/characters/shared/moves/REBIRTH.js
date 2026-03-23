@@ -8,12 +8,23 @@ export default {
   init : function(p,input){
     player[p].actionState = "REBIRTH";
     player[p].timer = 1;
-    player[p].phys.pos.x = activeStage.respawnPoints[p].x;
-    player[p].phys.pos.y = activeStage.respawnPoints[p].y+135;
+    // Get respawn position, clamped within current blastzone
+    var rp = activeStage.respawnPoints[p] || activeStage.respawnPoints[0];
+    var rx = rp.x;
+    var ry = rp.y + 135;
+    var bz = activeStage.blastzone;
+    // Clamp x to within 80% of blastzone width (safe margin from edges)
+    var bzCx = (bz.min.x + bz.max.x) / 2;
+    var bzHalfW = (bz.max.x - bz.min.x) * 0.4;
+    rx = Math.max(bzCx - bzHalfW, Math.min(bzCx + bzHalfW, rx));
+    // Clamp y below top blastzone
+    if (ry > bz.max.y - 20) ry = bz.max.y - 20;
+    player[p].phys.pos.x = rx;
+    player[p].phys.pos.y = ry;
     //player[p].phys.grounded = true;
     player[p].phys.cVel.x = 0;
     player[p].phys.cVel.y = -1.5;
-    player[p].phys.face = activeStage.respawnFace[p];
+    player[p].phys.face = (activeStage.respawnFace[p] !== undefined) ? activeStage.respawnFace[p] : (p % 2 === 0 ? 1 : -1);
     player[p].phys.doubleJumped = false;
     player[p].phys.fastfalled = false;
     player[p].phys.jumpsUsed = 0;

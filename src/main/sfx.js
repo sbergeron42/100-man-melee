@@ -623,6 +623,83 @@ window.changeVolume = function(audioGroup, newVolume, groupType) {
 changeVolume(sounds, 0.5, 0);
 changeVolume(MusicManager, 0.3, 1);
 
+// --- 100-Man Melee: Sound proximity + throttling system ---
+// Tracks which player is currently being processed so sounds
+// can be attenuated by distance from P1 (camera).
+import {player, ports} from "main/main";
+
+var currentSfxPlayer = -1; // index of player currently being processed
+var sfxThrottleFrame = {};
+var sfxActiveThisFrame = 0;
+var MAX_SAME_SOUND_PER_FRAME = 2;
+var MAX_TOTAL_SOUNDS_PER_FRAME = 8;
+var SOUND_FULL_RANGE = 120;  // game units: full volume (roughly viewport width)
+var SOUND_MAX_RANGE = 250;   // game units: silent beyond this distance
+
+export function setCurrentSfxPlayer(i) {
+  currentSfxPlayer = i;
+}
+
+export function getCurrentSfxPlayer() {
+  return currentSfxPlayer;
+}
+
+export function resetSfxThrottle() {
+  sfxThrottleFrame = {};
+  sfxActiveThisFrame = 0;
+  currentSfxPlayer = -1;
+}
+
+function getProximityVolume() {
+  // If no player context or we ARE player 0, full volume
+  if (currentSfxPlayer <= 0) return 1;
+  if (!player[0] || !player[0].phys) return 1;
+  if (!player[currentSfxPlayer] || !player[currentSfxPlayer].phys) return 0;
+
+  var dx = player[currentSfxPlayer].phys.pos.x - player[0].phys.pos.x;
+  var dy = player[currentSfxPlayer].phys.pos.y - player[0].phys.pos.y;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist <= SOUND_FULL_RANGE) return 1;
+  if (dist >= SOUND_MAX_RANGE) return 0;
+
+  // Quadratic falloff
+  var t = 1 - (dist - SOUND_FULL_RANGE) / (SOUND_MAX_RANGE - SOUND_FULL_RANGE);
+  return t * t;
+}
+
+var originalHowlPlay = Howl.prototype.play;
+Howl.prototype.play = function(spriteOrId) {
+  // Proximity volume
+  var proxVol = getProximityVolume();
+  if (proxVol <= 0.01) return; // too far, skip entirely
+
+  // Get a key for this sound (use src path)
+  var key = this._src || "unknown";
+  if (typeof key === "object") key = key[0] || "unknown";
+
+  // Throttle: skip if this sound already played too many times this frame
+  if (!sfxThrottleFrame[key]) sfxThrottleFrame[key] = 0;
+  sfxThrottleFrame[key]++;
+  if (sfxThrottleFrame[key] > MAX_SAME_SOUND_PER_FRAME) {
+    return;
+  }
+
+  // Global cap
+  sfxActiveThisFrame++;
+  if (sfxActiveThisFrame > MAX_TOTAL_SOUNDS_PER_FRAME) {
+    return;
+  }
+
+  // Apply proximity volume: temporarily scale this howl's volume
+  var origVol = this._volume;
+  this.volume(origVol * proxVol);
+  var result = originalHowlPlay.call(this, spriteOrId);
+  this._volume = origVol; // restore base volume for next time
+  return result;
+};
+// --- End sound system ---
+
 window.playSfx = function(name) {
   sounds[name].play();
 }

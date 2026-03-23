@@ -919,8 +919,13 @@ function dealWithLedges(i: number, input: any): void {
     for (let j = 0; j < activeStage.ledge.length; j++) {
       const ledgeAvailable = !occupiedLedges[j];
       if (ledgeAvailable && !player[i].phys.grounded && player[i].hit.hitstun <= 0) {
-        const x = activeStage[activeStage.ledge[j][0]][activeStage.ledge[j][1]][activeStage.ledge[j][2]].x;
-        const y = activeStage[activeStage.ledge[j][0]][activeStage.ledge[j][1]][activeStage.ledge[j][2]].y;
+        const ledgeRef = activeStage[activeStage.ledge[j][0]];
+        if (!ledgeRef || !ledgeRef[activeStage.ledge[j][1]] || !ledgeRef[activeStage.ledge[j][1]][activeStage.ledge[j][2]]) continue;
+        const x = ledgeRef[activeStage.ledge[j][1]][activeStage.ledge[j][2]].x;
+        const y = ledgeRef[activeStage.ledge[j][1]][activeStage.ledge[j][2]].y;
+
+        const canGrab = actionStates[characterSelections[i]][player[i].actionState].canGrabLedge;
+        if (!canGrab) continue;
 
         if (x > player[i].phys.ledgeSnapBoxF.min.x &&
             x < player[i].phys.ledgeSnapBoxF.max.x &&
@@ -928,10 +933,10 @@ function dealWithLedges(i: number, input: any): void {
             y > player[i].phys.ledgeSnapBoxF.max.y) {
 
           if (activeStage.ledge[j][2] === 0) {
-            if (actionStates[characterSelections[i]][player[i].actionState].canGrabLedge[0]) {
+            if (canGrab[0]) {
               lsBF = j;
             }
-          } else if (actionStates[characterSelections[i]][player[i].actionState].canGrabLedge[1]) {
+          } else if (canGrab[1]) {
             lsBF = j;
           }
         }
@@ -941,10 +946,10 @@ function dealWithLedges(i: number, input: any): void {
             y > player[i].phys.ledgeSnapBoxF.max.y) {
 
           if (activeStage.ledge[j][2] === 1) {
-            if (actionStates[characterSelections[i]][player[i].actionState].canGrabLedge[0]) {
+            if (canGrab[0]) {
               lsBB = j;
             }
-          } else if (actionStates[characterSelections[i]][player[i].actionState].canGrabLedge[1]) {
+          } else if (canGrab[1]) {
             lsBB = j;
           }
         }
