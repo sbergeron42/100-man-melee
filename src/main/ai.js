@@ -1,5 +1,5 @@
-import {aiInputBank} from "../input/input";
-import {player, characterSelections as cS, playerType} from "./main";
+import {aiInputBank, ensureAIInputSlot} from "../input/input";
+import {player, characterSelections as cS, playerType, ports} from "./main";
 import {gameSettings} from "../settings";
 import {activeStage as aS} from "../stages/activeStage";
 /* eslint-disable */
@@ -8,7 +8,7 @@ let a = 0;
 export function NearestEnemy(cpu,p){
   let nearestEnemy = -1;
   let enemyDistance = 100000;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < ports; i++) {
     if (playerType[i] > -1) {
       if (playerType[i] > -1 && i != p && player[i].actionState != "SLEEP") {
         if (i != p) {
@@ -30,6 +30,7 @@ export function NearestEnemy(cpu,p){
   return nearestEnemy;
 }
 export function generalAI(i) {
+  ensureAIInputSlot(i);
   aiInputBank[i][0].lsX = 0;
   aiInputBank[i][0].lsY = 0;
   aiInputBank[i][0].x = false;
@@ -711,7 +712,7 @@ function foxAI(i) {
   }
   var isDead = false;
   var deadDude = "NONE";
-  for (var aa = 0; aa < 4; aa++) {
+  for (var aa = 0; aa < ports; aa++) {
     if (playerType[aa] != -1 && !(i == aa)) {
       if (player[aa].actionState.substr(0, 4) == "DEAD" || player[aa].actionState.substr(0, 7) == "REBIRTH") { //"DEADDOWN","REBIRTH","REBIRTHWAIT"]) {
         isDead = true;

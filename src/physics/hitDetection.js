@@ -1,4 +1,4 @@
-import {playerType, player, characterSelections, screenShake, gameMode, percentShake} from "main/main";
+import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports} from "main/main";
 
 import {gameSettings} from "settings";
 import {sounds} from "main/sfx";
@@ -23,7 +23,7 @@ const angleConversion = Math.PI / 180;
 
 export function hitDetect (p,input){
     var attackerClank = false;
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < ports; i++) {
         if (playerType[i] > -1) {
             if (i != p) {
                 // check if victim is already in hitList

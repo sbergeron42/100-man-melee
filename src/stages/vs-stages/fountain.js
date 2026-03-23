@@ -4,7 +4,7 @@ import {Box2D} from "../../main/util/Box2D";
 import {Vec2D} from "../../main/util/Vec2D";
 
 import {activeStage} from "../activeStage";
-import {player, starting} from "../../main/main";
+import {player, starting, ports} from "../../main/main";
 import {additionalOffset} from "../../physics/environmentalCollision";
 
 /*eslint indent:0*/ 
@@ -123,7 +123,7 @@ export default {
     else {
       updatePlatform(1,0);
       updatePlatform(2,1);
-      for (let j = 0; j < 4; j++) {
+      for (let j = 0; j < ports; j++) {
         if (player[j].phys.grounded) {
           if (player[j].phys.onSurface[0] === 1 && (player[j].phys.onSurface[1] === 1 || player[j].phys.onSurface[1] === 2)) {
             const plat = player[j].phys.onSurface[1];

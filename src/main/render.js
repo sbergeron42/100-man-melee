@@ -10,10 +10,11 @@ import {
     palettes,
     pPal,
     hasTag,
-    tagText, 
+    tagText,
 	gameMode,
     startTimer,
-     holiday
+     holiday,
+    ports
 } from "main/main";
 import {gameSettings} from "settings";
 import {makeColour} from "main/vfx/makeColour";
@@ -25,6 +26,11 @@ import {framesData} from "./characters";
 /* eslint-disable */
 
 export const hurtboxColours = [makeColour(255,237,70,0.6),makeColour(42,57,255,0.6),makeColour(54,255,37,0.6)];
+
+function pal(i) {
+  var idx = (pPal[i] !== undefined) ? pPal[i] : i;
+  return palettes[idx % palettes.length];
+}
 export const twoPi = Math.PI * 2;
 
 export let lostStockQueue = [];
@@ -127,15 +133,15 @@ export function renderPlayer(i) {
             col = "rgb(255,255,255)";
         } else if (player[i].phys.intangibleTimer % 9 > 3 || player[i].phys.invincibleTimer % 9 > 3 || player[i].hit.hitlag >
             0) {
-            col = palettes[pPal[i]][1];
+            col = pal(i)[1];
         } else if (player[i].phys.charging && player[i].phys.chargeFrames % 9 > 3) {
             col = "rgb(252, 255, 91)";
         } else if (player[i].actionState == "FURAFURA" && player[i].timer % 30 < 6) {
-            col = palettes[pPal[i]][3];
+            col = pal(i)[3];
         } else if (player[i].colourOverlayBool) {
             col = player[i].colourOverlay;
         } else if (player[i].shocked > 0) {
-            var originalColour = palettes[pPal[i]][0];
+            var originalColour = pal(i)[0];
             originalColour = originalColour.substr(4, originalColour.length - 5);
             var colourArray = originalColour.split(",");
             if (player[i].shocked % 2) {
@@ -145,7 +151,7 @@ export function renderPlayer(i) {
             }
             col = "rgb(" + newCol[0] + "," + newCol[1] + "," + newCol[2] + ")";
         } else if (player[i].burning > 0) {
-            var originalColour = palettes[pPal[i]][0];
+            var originalColour = pal(i)[0];
             originalColour = originalColour.substr(4, originalColour.length - 5);
             var colourArray = originalColour.split(",");
             var part = player[i].burning % 3;
@@ -157,10 +163,10 @@ export function renderPlayer(i) {
                 }
                 col = "rgb(" + newCol[0] + "," + newCol[1] + "," + newCol[2] + ")";
             } else {
-                col = palettes[pPal[i]][0];
+                col = pal(i)[0];
             }
         } else {
-            col = palettes[pPal[i]][0];
+            col = pal(i)[0];
         }
         if (player[i].phys.chargeFrames % 4 == 3) {
             temX += 2;
@@ -208,7 +214,7 @@ export function renderPlayer(i) {
         }
         if (player[i].miniView && player[i].actionState != "SLEEP") {
             fg2.fillStyle = "black";
-            fg2.strokeStyle = palettes[pPal[i]][0];
+            fg2.strokeStyle = pal(i)[0];
             fg2.beginPath();
             fg2.arc(player[i].miniViewPoint.x, player[i].miniViewPoint.y, 35, twoPi, 0);
             fg2.fill();
@@ -236,9 +242,9 @@ export function renderPlayer(i) {
         if (!(player[i].phys.powerShielded && player[i].hit.hitlag > 0)) {
             var sX = ((player[i].phys.shieldPositionReal.x) * activeStage.scale) + activeStage.offset[0];
             var sY = ((player[i].phys.shieldPositionReal.y) * -activeStage.scale) + activeStage.offset[1];
-            var sCol = palettes[pPal[i]][2];
+            var sCol = pal(i)[2];
             if (Math.floor(player[i].hit.shieldstun) > 0) {
-                sCol = palettes[pPal[i]][4];
+                sCol = pal(i)[4];
             }
             fg2.fillStyle = sCol + (0.6 * player[i].phys.shieldAnalog) + ")";
             fg2.beginPath();
@@ -248,7 +254,7 @@ export function renderPlayer(i) {
     }
     if (hasTag[i]) {
         fg2.fillStyle = makeColour(0, 0, 0, 0.5);
-        fg2.strokeStyle = palettes[pPal[i]][0];
+        fg2.strokeStyle = pal(i)[0];
         var size = 10 * tagText[i].length
         fg2.fillRect(temX - size / 2, temY - 130 * (activeStage.scale / 4.5), size, 20);
         fg2.strokeRect(temX - size / 2, temY - 130 * (activeStage.scale / 4.5), size, 20);
@@ -256,7 +262,7 @@ export function renderPlayer(i) {
         fg2.textAlign = "center";
         fg2.fillStyle = "white";
         fg2.fillText(tagText[i], temX, temY + 15 - 130 * (activeStage.scale / 4.5));
-        fg2.fillStyle = palettes[pPal[i]][0];
+        fg2.fillStyle = pal(i)[0];
         fg2.beginPath();
         fg2.moveTo(temX - 8, temY + 20 - 130 * (activeStage.scale / 4.5));
         fg2.lineTo(temX + 8, temY + 20 - 130 * (activeStage.scale / 4.5));
@@ -266,8 +272,8 @@ export function renderPlayer(i) {
         fg2.textAlign = "start";
     }
     if (player[i].actionState == "REBIRTH" || player[i].actionState == "REBIRTHWAIT") {
-        fg2.fillStyle = palettes[pPal[i]][1];
-        fg2.strokeStyle = palettes[pPal[i]][0];
+        fg2.fillStyle = pal(i)[1];
+        fg2.strokeStyle = pal(i)[0];
         fg2.beginPath();
         fg2.moveTo(temX + 18 * (activeStage.scale / 4.5), temY + 13.5 * (activeStage.scale / 4.5));
         fg2.lineTo(temX + 31.5 * (activeStage.scale / 4.5), temY);
@@ -415,7 +421,9 @@ export function renderOverlay(showStock) {
         ui.textAlign = "end";
         ui.save();
         ui.scale(0.8, 1);
-        for (var i = 0; i < 4; i++) {
+        // Only show HUD for first 4 players (or fewer)
+        var hudCount = Math.min(ports, 4);
+        for (var i = 0; i < hudCount; i++) {
             if (playerType[i] > -1) {
                 ui.fillStyle = "rgb(255," + Math.max(255 - player[i].percent, 0) + ", " + Math.max(255 - player[i].percent, 0) +
                     ")";
@@ -426,9 +434,9 @@ export function renderOverlay(showStock) {
             }
         }
         ui.restore();
-        for (var i = 0; i < 4; i++) {
+        for (var i = 0; i < hudCount; i++) {
             if (playerType[i] > -1) {
-                ui.fillStyle = palettes[pPal[i]][0];
+                ui.fillStyle = palettes[pPal[i] % palettes.length][0];
                 for (var j = 0; j < player[i].stocks; j++) {
                     ui.beginPath();
                     ui.arc(337 + i * 145 + j * 30, 600, 12, 0, twoPi);
@@ -437,6 +445,20 @@ export function renderOverlay(showStock) {
                     ui.stroke();
                 }
             }
+        }
+        // Show alive count for battle royale
+        if (ports > 4) {
+            var alive = 0;
+            for (var ai = 0; ai < ports; ai++) {
+                if (playerType[ai] > -1 && player[ai] && player[ai].stocks > 0) alive++;
+            }
+            ui.fillStyle = "white";
+            ui.strokeStyle = "black";
+            ui.lineWidth = 2;
+            ui.font = "900 30px Arial";
+            ui.textAlign = "center";
+            ui.fillText("Alive: " + alive + "/" + ports, 590, 110);
+            ui.strokeText("Alive: " + alive + "/" + ports, 590, 110);
         }
         const lostStockPopQueue = [];
         ui.fillStyle = "white";

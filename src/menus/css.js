@@ -1130,7 +1130,7 @@ export function drawCSS() {
     }
   }
   // 72 95
-  for (var i = 0; i < ports; i++) {
+  for (var i = 0; i < Math.min(ports, 4); i++) {
 
     switch (handType[i]) {
       case 0:

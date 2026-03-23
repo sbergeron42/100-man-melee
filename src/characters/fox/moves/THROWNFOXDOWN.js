@@ -34,9 +34,12 @@ export default {
           return;
         }
         if(timer > this.offset.length){
-          timer = this.offset.length -1;
+          timer = this.offset.length;
         }
-        player[p].phys.pos = new Vec2D(player[grabbedBy].phys.pos.x+this.offset[timer-1][0]*player[p].phys.face*-1,player[grabbedBy].phys.pos.y+this.offset[timer-1][1]);
+        if(timer < 1) timer = 1;
+        var ofs = this.offset[timer-1];
+        if(!ofs || !player[grabbedBy]) return;
+        player[p].phys.pos = new Vec2D(player[grabbedBy].phys.pos.x+ofs[0]*player[p].phys.face*-1,player[grabbedBy].phys.pos.y+ofs[1]);
       }
     }
   },

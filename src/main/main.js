@@ -38,7 +38,7 @@ import {Box2D} from "./util/Box2D";
 import {Vec2D} from "./util/Vec2D";
 import {updateNetworkInputs, connectToMPRoom, retrieveNetworkInputs, giveInputs,connectToMPServer, syncGameMode} from "./multiplayer/streamclient";
 import {saveGameState, loadReplay, gameTickDelay} from "./replay";
-import {keyboardMap, showButton, nullInputs, pollInputs, inputData, setCustomCenters, nullInput} from "../input/input";
+import {keyboardMap, showButton, nullInputs, pollInputs, inputData, setCustomCenters, nullInput, ensureAIInputSlot} from "../input/input";
 import {deaden} from "../input/meleeInputs";
 import {getGamepadNameAndInfo} from "../input/gamepad/findGamepadInfo";
 import {customGamepadInfo} from "../input/gamepad/gamepads/custom";
@@ -52,11 +52,12 @@ import {setTokenPosSnapToChar} from "../menus/css";
 export const holiday = 0;
 export var snowCount = 150;
 
-export const player = [0,0,0,0];
+export const MAX_PLAYERS = 100;
+export const player = [];
 export const renderTime = [10,0,100,0];
 export const gamelogicTime = [5,0,100,0];
 export const framerate = [0,0,0];
-export var characterSelections = [0,0,0,0];
+export var characterSelections = [];
 
 export var shine = 0.5;
 
@@ -66,14 +67,14 @@ export let creditsPlayer = 0;
 export let calibrationPlayer = 0;
 
 export let gameEnd = false;
-export let controllerResetCountdowns = [0,0,0,0];
+export let controllerResetCountdowns = [];
 export function setControllerReset( i ) {
   controllerResetCountdowns[i] = 0;
 }
 
 let keyboardOccupied = false;
 
-export let usingCustomControls = [false, false, false, false];
+export let usingCustomControls = [];
 
 export function setUsingCustomControls( i, bool, info ) {
   usingCustomControls[i] = bool;
@@ -85,12 +86,12 @@ export function setUsingCustomControls( i, bool, info ) {
   }
 }
 
-export let firstTimeDetected = [true, true, true, true];
+export let firstTimeDetected = [];
 
-window.mType = [null, null, null, null];
+window.mType = [];
 
 
-export const mType = [null,null,null,null];
+export const mType = [];
 
 export  function setMtype(index,val){
   mType[index] = val;
@@ -104,9 +105,9 @@ export function setCurrentPlayer(index,val){
 
 export const playerAmount = 0;
 
-export const playerType = [-1,-1,-1,-1];
+export const playerType = [];
 
-export const cpuDifficulty = [3,3,3,3];
+export const cpuDifficulty = [];
 
 export let ports = 0;
 export const activePorts = [];
@@ -150,23 +151,42 @@ export const palettes = [["rgb(250, 89, 89)","rgb(255, 170, 170)","rgba(255, 206
 ["rgb(232, 232, 208)","rgb(255, 255, 255)","rgba(244, 255, 112, ","rgb(191, 119, 119)","rgba(255, 255, 200, "]];
 
 
-export const hasTag = [false,false,false,false];
-export const tagText = ["","","",""];
+export const hasTag = [];
+export const tagText = [];
 export function setTagText(index,value){
   tagText[index] = value;
   hasTag[index] = true;
 }
-export const pPal = [0,1,2,3];
+export const pPal = [];
 
 export const costumeTimeout = [];
 
 export const colours = ["rgba(4, 255, 82, 0.62)","rgba(117, 20, 255, 0.63)","rgba(255, 20, 20, 0.63)","rgba(255, 232, 20, 0.63)"];
 
-export let pause = [[true,true],[true,true],[true,true],[true,true]];
-export let frameAdvance = [[true,true],[true,true],[true,true],[true,true]];
+export let pause = [];
+export let frameAdvance = [];
 
-export const startingPoint = [[-50,50],[50,50],[-25,5],[25,5]];
-export const startingFace = [1,-1,1,-1];
+export const defaultStartingPoints = [[-50,50],[50,50],[-25,5],[25,5]];
+export const defaultStartingFaces = [1,-1,1,-1];
+export let startingPoint = [];
+export let startingFace = [];
+
+export function generateStartingPositions(count) {
+  startingPoint = [];
+  startingFace = [];
+  for (var i = 0; i < count; i++) {
+    if (i < defaultStartingPoints.length) {
+      startingPoint.push(defaultStartingPoints[i]);
+      startingFace.push(defaultStartingFaces[i]);
+    } else {
+      // Spread players across the stage randomly
+      var x = -60 + Math.random() * 120;
+      var y = 30 + Math.random() * 40;
+      startingPoint.push([x, y]);
+      startingFace.push(Math.random() < 0.5 ? 1 : -1);
+    }
+  }
+}
 
 export const ground = [[-68.4,0],[68.4,0]];
 
@@ -182,7 +202,21 @@ export const edgeOffset = [[-2.9,-23.7],[2.9,-23.7]];
 
 export const edgeOrientation = [1,-1];
 
-export const respawnPoints = [[-50,50,1],[50,50,-1],[25,35,1],[-25,35,-1]];
+export const defaultRespawnPoints = [[-50,50,1],[50,50,-1],[25,35,1],[-25,35,-1]];
+export let respawnPoints = [];
+
+export function generateRespawnPoints(count) {
+  respawnPoints = [];
+  for (var i = 0; i < count; i++) {
+    if (i < defaultRespawnPoints.length) {
+      respawnPoints.push(defaultRespawnPoints[i]);
+    } else {
+      var x = -50 + Math.random() * 100;
+      var face = Math.random() < 0.5 ? 1 : -1;
+      respawnPoints.push([x, 50, face]);
+    }
+  }
+}
 
 export var stageSelect = 0;
 
@@ -375,7 +409,7 @@ export function findPlayers (){
   if (!keyboardOccupied) {
     if (gameMode < 2 || gameMode == 20) {
       if (keys[13] || keys[keyMap.s[0]] || keys[keyMap.s[1]]) {
-        if (ports < 4) {
+        if (ports < MAX_PLAYERS) {
           changeGamemode(1);
           $("#keyboardPrompt").hide();
           keyboardOccupied = true;
@@ -388,7 +422,7 @@ export function findPlayers (){
       }
     } else {
       if (keys[keyMap.a[0]] || keys[keyMap.a[1]]) {
-        if (ports < 4) {
+        if (ports < MAX_PLAYERS) {
           keyboardOccupied = true;
           addPlayer(ports, "keyboard");
         }
@@ -405,7 +439,7 @@ export function findPlayers (){
         }
       }
       if (!alreadyIn) {
-        if (ports < 4) {
+        if (ports < MAX_PLAYERS) {
           addPlayer(i, 99);
         }
       }
@@ -446,7 +480,7 @@ export function findPlayers (){
               }
             }
             if (!alreadyIn) {
-              if (ports < 4) {
+              if (ports < MAX_PLAYERS) {
                 changeGamemode(1);
                 $("#keyboardPrompt").hide();
                 sounds.menuForward.play();
@@ -466,7 +500,7 @@ export function findPlayers (){
               }
             }
             if (!alreadyIn) {
-              if (ports < 4) {
+              if (ports < MAX_PLAYERS) {
                 addPlayer(i, gpdInfo);
               }
             }
@@ -483,7 +517,35 @@ export function setPlayerType(playerSlot,type){
   playerType[playerSlot] = type;
 }
 
+export function ensurePlayerSlot(index) {
+  while (player.length <= index) player.push(0);
+  while (playerType.length <= index) playerType.push(-1);
+  while (characterSelections.length <= index) characterSelections.push(0);
+  while (mType.length <= index) mType.push(null);
+  while (currentPlayers.length <= index) currentPlayers.push(-1);
+  while (cpuDifficulty.length <= index) cpuDifficulty.push(3);
+  while (controllerResetCountdowns.length <= index) controllerResetCountdowns.push(0);
+  while (usingCustomControls.length <= index) usingCustomControls.push(false);
+  while (firstTimeDetected.length <= index) firstTimeDetected.push(true);
+  while (hasTag.length <= index) hasTag.push(false);
+  while (tagText.length <= index) tagText.push("");
+  while (pPal.length <= index) pPal.push(index % palettes.length);
+  while (pause.length <= index) pause.push([true, true]);
+  while (frameAdvance.length <= index) frameAdvance.push([true, true]);
+  while (startingPoint.length <= index) {
+    var x = -60 + Math.random() * 120;
+    var y = 30 + Math.random() * 40;
+    startingPoint.push([x, y]);
+  }
+  while (startingFace.length <= index) startingFace.push(Math.random() < 0.5 ? 1 : -1);
+  while (respawnPoints.length <= index) {
+    var x2 = -50 + Math.random() * 100;
+    respawnPoints.push([x2, 50, Math.random() < 0.5 ? 1 : -1]);
+  }
+}
+
 export function addPlayer (i, controllerInfo){
+  ensurePlayerSlot(ports);
   if(controllerInfo === 99){
     ports++;
     currentPlayers[ports - 1] = i;
@@ -494,7 +556,7 @@ export function addPlayer (i, controllerInfo){
     currentPlayers[ports - 1] = i;
     playerType[ports - 1] = 0;
     mType[ports - 1] = controllerInfo;
-    if (showDebug) {
+    if (showDebug && ports <= 4) {
       updateGamepadSVGColour(i, "gamepadSVG" + i);
       document.getElementById("gamepadSVG" + i).style.display = "";
     }
@@ -520,11 +582,13 @@ export function togglePort (i){
 }
 
 export function positionPlayersInCSS (){
-  for (var i=0;i<4;i++){
-      var x = (-80+i*50)*2/3;
-      var y = -30;
-      player[i].phys.pos = new Vec2D(x,y);
-      player[i].phys.hurtbox = new Box2D([-4+x,18+y],[4+x,y]);
+  for (var i=0;i<ports;i++){
+      if (playerType[i] > -1 && player[i]) {
+        var x = (-80+(i%4)*50)*2/3;
+        var y = -30;
+        player[i].phys.pos = new Vec2D(x,y);
+        player[i].phys.hurtbox = new Box2D([-4+x,18+y],[4+x,y]);
+      }
   }
 }
 
@@ -910,7 +974,11 @@ export function gameTick (oldInputBuffers){
   var start = performance.now();
   var diff = 0;
 
-  let input = [nullInputs(), nullInputs(), nullInputs(), nullInputs()];
+  var inputSize = Math.max(ports, 4);
+  let input = [];
+  for (var _ii = 0; _ii < inputSize; _ii++) input.push(nullInputs());
+  // Ensure oldInputBuffers covers all ports
+  while (oldInputBuffers.length < inputSize) oldInputBuffers.push(nullInputs());
 
   if (gameMode == 0 || gameMode == 20) {
     findPlayers();
@@ -947,15 +1015,16 @@ export function gameTick (oldInputBuffers){
       menuMove(i, input);
     }
   }else if (gameMode == 2) {
-    for (var i = 0; i < 4; i++) {
-      if (i < ports) {
+    // CSS only handles first 4 human-controlled players
+    var cssMax = Math.min(ports, 4);
+    for (var i = 0; i < cssMax; i++) {
+      if (playerType[i] > -1 && player[i]) {
         input[i] = interpretInputs(i, true, playerType[i],oldInputBuffers[i]);
         cssControls(i, input);
+        actionStates[characterSelections[i]][player[i].actionState].main(i,input);
       }
-
-      actionStates[characterSelections[i]][player[i].actionState].main(i,input);
     }
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < cssMax; i++) {
       if (playerType[i] > -1) {
         hitDetect(i,input);
       }
@@ -965,7 +1034,7 @@ export function gameTick (oldInputBuffers){
     findPlayers();
   } else if (gameMode == 6) {
     // stage select
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < Math.min(ports, 4); i++) {
       if (i < ports) {
         input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
         sssControls(i, input);
@@ -1053,7 +1122,7 @@ export function gameTick (oldInputBuffers){
     destroyArticles();
     executeArticles();
 
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
         if(!starting) {
           input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
@@ -1062,9 +1131,9 @@ export function gameTick (oldInputBuffers){
       }
     }
     checkPhantoms();
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
-        hitDetect(i,input); 
+        hitDetect(i,input);
       }
     }
     executeHits(input);
@@ -1105,7 +1174,7 @@ export function gameTick (oldInputBuffers){
     findPlayers();
   } else {
     if (!gameEnd) {
-      for (var i = 0; i < 4; i++) {
+      for (var i = 0; i < ports; i++) {
         if (playerType[i] == 0 ||playerType[i] == 2) {
           if (currentPlayers[i] != -1) {
             input[i] = interpretInputs(i, false,playerType[i],oldInputBuffers[i]);
@@ -1238,7 +1307,7 @@ export function renderTick (){
         drawBackground();
       }
       drawStage();
-      for (var i = 0; i < 4; i++) {
+      for (var i = 0; i < ports; i++) {
         if (playerType[i] > -1) {
           renderPlayer(i);
         }
@@ -1281,10 +1350,13 @@ export function renderTick (){
 }
 
 export function buildPlayerObject (i){
-  player[i] = new playerObject(characterSelections[i],startingPoint[i],startingFace[i]);
-  player[i].phys.ECB1 = [new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y)];
-  player[i].phys.ECBp = [new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y),new Vec2D(startingPoint[i].x,startingPoint[i].y)];
-  player[i].difficulty = cpuDifficulty[i];
+  ensurePlayerSlot(i);
+  var sp = startingPoint[i] || [0, 50];
+  var sf = startingFace[i] || 1;
+  player[i] = new playerObject(characterSelections[i],sp,sf);
+  player[i].phys.ECB1 = [new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1])];
+  player[i].phys.ECBp = [new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1]),new Vec2D(sp[0],sp[1])];
+  player[i].difficulty = cpuDifficulty[i] || 3;
 }
 
 
@@ -1304,6 +1376,32 @@ export function initializePlayers (i,target){
   }
 }
 
+export function spawnAIPlayers(count) {
+  var characters = [0, 1, 2, 3, 4]; // falco, falcon, fox, marth, puff
+  for (var i = 0; i < count; i++) {
+    if (ports >= MAX_PLAYERS) break;
+    ensurePlayerSlot(ports);
+    ensureAIInputSlot(ports);
+    var charIndex = characters[Math.floor(Math.random() * characters.length)];
+    characterSelections[ports] = charIndex;
+    playerType[ports] = 1; // AI
+    currentPlayers[ports] = ports;
+    mType[ports] = null; // AI doesn't need controller
+    cpuDifficulty[ports] = Math.floor(Math.random() * 5) + 1; // random difficulty 1-5
+    pPal[ports] = ports % palettes.length;
+    ports++;
+    // Build player object immediately so it exists for rendering/hit detection
+    buildPlayerObject(ports - 1);
+    player[ports - 1].phys.face = 1;
+    player[ports - 1].actionState = "WAIT";
+    player[ports - 1].timer = 0;
+  }
+  console.log("Spawned " + count + " AI players. Total: " + ports);
+}
+
+// Expose to browser console for testing
+window.spawnAIPlayers = spawnAIPlayers;
+
 export function startGame (){
   setVsStage(stageSelect);
   setBackgroundType(Math.round(Math.random()));
@@ -1312,13 +1410,13 @@ export function startGame (){
   }
   changeGamemode(3);
   resetVfxQueue();
-  for (var n = 0; n < 4; n++) {
+  for (var n = 0; n < ports; n++) {
     if (playerType[n] > -1) {
       initializePlayers(n, false);
       renderPlayer(n);
       player[n].inCSS = false;
     }
-    if (versusMode) {
+    if (versusMode && player[n]) {
       player[n].stocks = 1;
     }
   }
@@ -1380,17 +1478,16 @@ export function endGame (input){
       changeGamemode(7);
     }
   }
-  pause = [[true,true],[true,true],[true,true],[true,true]];
-  frameAdvance = [
-    [true, true],
-    [true, true],
-    [true, true],
-    [true, true]
-  ];
+  pause = [];
+  frameAdvance = [];
+  for (var _r = 0; _r < ports; _r++) {
+    pause.push([true, true]);
+    frameAdvance.push([true, true]);
+  }
   findingPlayers = true;
   positionPlayersInCSS();
-  for (var i = 0; i < 4; i++) {
-    if (playerType[i] > -1) {
+  for (var i = 0; i < ports; i++) {
+    if (playerType[i] > -1 && player[i]) {
       if (player[i].actionState == "FURAFURA") {
         sounds.furaloop.stop(player[i].furaLoopID);
       }
@@ -1529,7 +1626,9 @@ export function start (){
   if (holiday === 1){
     $("#layerButton").after('<div id="snowButton" class="gameButton" style="width:90px"><img src="assets/christmas/snowflake.png" height=17 width=17 style="display:inline-block"/><p style="width:30px;display:inline-block"><span id="snowButtonEdit">150</span></p><div id="snowMinus" class="snowControl" style="display:inline-block;padding:3px"><p style="padding:0;font-size:20px">-</p></div><div id="snowPlus" style="display:inline-block;padding:3px"><p style="padding:0;font-size:17px">+</p></div></div>');
   }
+  // Initialize 4 default player slots
   for (var i=0;i<4;i++){
+    ensurePlayerSlot(i);
     buildPlayerObject(i);
     player[i].phys.face = 1;
     player[i].actionState = "WAIT";
@@ -1560,7 +1659,8 @@ export function start (){
   ui = layers.UI.getContext("2d");
   bg1.fillStyle = "rgb(0, 0, 0)";
   bg1.fillRect(0, 0, layers.BG1.width, layers.BG1.height);
-  let nullInputBuffers =  [nullInputs(), nullInputs(), nullInputs(), nullInputs()];
+  let nullInputBuffers = [];
+  for (var _ni = 0; _ni < Math.max(ports, 4); _ni++) nullInputBuffers.push(nullInputs());
   gameTick(nullInputBuffers);
   renderTick();
 
@@ -1626,8 +1726,9 @@ export function start (){
 
   $("#debugButton").click(function() {
     if (showDebug) {
-      for (let i = 0; i < 4; i++) {
-        document.getElementById("gamepadSVG"+i).style.display = "none";
+      for (let i = 0; i < Math.min(ports, 4); i++) {
+        var el = document.getElementById("gamepadSVG"+i);
+        if (el) el.style.display = "none";
       }
       $("#debugButtonEdit").empty().append("OFF");
       $("#debug").hide();
@@ -1636,10 +1737,11 @@ export function start (){
       //var mY = Math.max(($(window).height()-750)/2,0);
       //$("#display").css("margin",mY+"px 0px 0px "+mX+"px");
     } else {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < Math.min(ports, 4); i++) {
         if (playerType[i] !== -1) {
           updateGamepadSVGColour(i, "gamepadSVG"+i);
-          document.getElementById("gamepadSVG"+i).style.display = "";
+          var el2 = document.getElementById("gamepadSVG"+i);
+          if (el2) el2.style.display = "";
         }
       }
       $("#debugButtonEdit").empty().append("ON");

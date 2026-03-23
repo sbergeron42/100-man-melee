@@ -117,6 +117,16 @@ export const aiPlayer4 = [ new inputData ( )
 
 export const aiInputBank = [aiPlayer1,aiPlayer2,aiPlayer3,aiPlayer4];
 
+// Dynamically grow aiInputBank for more than 4 AI players
+export function ensureAIInputSlot(index) {
+  while (aiInputBank.length <= index) {
+    aiInputBank.push([
+      new inputData(), new inputData(), new inputData(), new inputData(),
+      new inputData(), new inputData(), new inputData(), new inputData()
+    ]);
+  }
+}
+
 // should be able to move out the "frameByFrame" aspect of the following function
 // it is only used to make z button mean "left trigger value = 0.35" + "A = true".
 export function pollInputs ( gameMode : number, frameByFrame : bool, controllerInfo : "keyboard" | GamepadInfo
@@ -126,6 +136,7 @@ export function pollInputs ( gameMode : number, frameByFrame : bool, controllerI
     if(replayActive){
       input = pollReplayInputs(gameMode, controllerInfo, playerSlot, controllerIndex, frameByFrame);
     }else if(playertype === 1 && gameMode === 3 ){
+      ensureAIInputSlot(playerSlot);
       return aiInputBank[playerSlot][0];
     }else if (controllerInfo === "keyboard") { // keyboard controls
       input = pollKeyboardInputs(gameMode, frameByFrame, keys);

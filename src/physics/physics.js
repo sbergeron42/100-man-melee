@@ -8,7 +8,8 @@ import {
   edgeOffset,
   versusMode,
   showDebug,
-  gameMode
+  gameMode,
+  ports
 } from "../main/main";
 import {framesData, ecb} from "../main/characters";
 import {sounds} from "../main/sfx";
@@ -562,7 +563,17 @@ function hitlagSwitchUpdate(i : number, input : any) : void {
     }
 
     player[i].prevActionState = player[i].actionState;
-    actionStates[characterSelections[i]][player[i].actionState].main(i, input);
+    try {
+      actionStates[characterSelections[i]][player[i].actionState].main(i, input);
+    } catch(e) {
+      // Thrown state errors can occur when grabbedBy references invalid state
+      // Recover by forcing the player into a safe action state
+      if (player[i].actionState.indexOf("THROWN") === 0 || player[i].actionState.indexOf("CAPTURE") === 0) {
+        player[i].phys.grabbedBy = -1;
+        player[i].phys.grabbing = -1;
+        actionStates[characterSelections[i]].DAMAGEFALL.init(i, input);
+      }
+    }
 
     if (player[i].shocked > 0) {
       player[i].shocked--;
@@ -736,14 +747,16 @@ function lCancelUpdate(i: number, input: any): void {
 
 const nullSquashDatum = {location: null, factor: 1};
 
-const ecbSquashData: [ SquashDatum
-    , SquashDatum
-    , SquashDatum
-    , SquashDatum
-    ] = [nullSquashDatum
+const ecbSquashData = [nullSquashDatum
   , nullSquashDatum
   , nullSquashDatum
   , nullSquashDatum];
+
+function ensureEcbSquashData(i) {
+  while (ecbSquashData.length <= i) {
+    ecbSquashData.push({location: null, factor: 1});
+  }
+}
 
 
 function findAndResolveCollisions(i: number, input: any
@@ -894,7 +907,7 @@ function dealWithLedges(i: number, input: any): void {
   if (player[i].phys.onLedge === -1 && !player[i].phys.ledgeRegrabCount) {
     for (let j = 0; j < activeStage.ledge.length; j++) {
       let ledgeAvailable = true;
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < ports; k++) {
         if (playerType[k] > -1) {
           if (k !== i) {
             if (player[k].phys.onLedge === j) {
@@ -1064,6 +1077,7 @@ function updateHitboxes(i: number): void {
 
 
 export function physics (i : number, input : any) : void {
+  ensureEcbSquashData(i);
   player[i].phys.passing = false;
   player[i].phys.posPrev = new Vec2D(player[i].phys.pos.x,player[i].phys.pos.y);
   player[i].phys.facePrev = player[i].phys.face;
