@@ -16,7 +16,7 @@ import {drawCreditsInit, credits, drawCredits} from "menus/credits";
 import {renderForeground, renderPlayer, renderOverlay, resetLostStockQueue} from "main/render";
 
 import {actionStates} from "physics/actionStateShortcuts";
-import {executeHits, hitDetect, checkPhantoms, resetHitQueue, setPhantonQueue} from "physics/hitDetection";
+import {executeHits, hitDetect, checkPhantoms, resetHitQueue, setPhantonQueue, rebuildSpatialGrid} from "physics/hitDetection";
 import {
   targetPlayer, targetHitDetection, targetTimerTick, targetTesting, medalsEarned,
   targetRecords, targetsDestroyed, targetStagePlaying , getTargetCookies , giveMedals, medalTimes
@@ -24,8 +24,8 @@ import {
 import {tssControls, drawTSS, drawTSSInit, getTargetStageCookies} from "../stages/targetselect";
 import {targetBuilder, targetBuilderControls, renderTargetBuilder, showingCode} from "target/targetbuilder";
 import {destroyArticles, executeArticles, articlesHitDetection, executeArticleHits, renderArticles, resetAArticles} from "physics/article";
-import {runAI} from "main/ai";
-import {physics} from "physics/physics";
+import {runAI, clearNearestEnemyCache} from "main/ai";
+import {physics, rebuildLedgeCache} from "physics/physics";
 import $ from 'jquery';
 import {toggleTransparency,getTransparency} from "main/vfx/transparency";
 import {drawVfx} from "main/vfx/drawVfx";
@@ -47,6 +47,7 @@ import {updateGamepadSVGState, updateGamepadSVGColour, setGamepadSVGColour, cycl
 import {deepCopy} from "./util/deepCopy";
 import {deepObjectMerge} from "./util/deepCopyObject";
 import {setTokenPosSnapToChar} from "../menus/css";
+import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera} from "./camera";
 /*globals performance*/
 
 export const holiday = 0;
@@ -401,6 +402,89 @@ export function percentShake (kb,i){
 }
 
 
+export function renderMinimap() {
+  var mmW = 200;
+  var mmH = 120;
+  var mmX = 10;
+  var mmY = 10;
+  var stage = getActiveStage();
+  var bz = stage.blastzone;
+  // Blastzone range in game units
+  var bzW = bz.max.x - bz.min.x;
+  var bzH = bz.max.y - bz.min.y;
+
+  // Background
+  ui.save();
+  ui.globalAlpha = 0.6;
+  ui.fillStyle = "black";
+  ui.fillRect(mmX, mmY, mmW, mmH);
+  ui.globalAlpha = 1;
+
+  // Draw ground lines
+  ui.strokeStyle = "rgba(100, 180, 255, 0.6)";
+  ui.lineWidth = 1;
+  for (var g = 0; g < stage.ground.length; g++) {
+    var gx1 = mmX + ((stage.ground[g][0].x - bz.min.x) / bzW) * mmW;
+    var gy1 = mmY + mmH - ((stage.ground[g][0].y - bz.min.y) / bzH) * mmH;
+    var gx2 = mmX + ((stage.ground[g][1].x - bz.min.x) / bzW) * mmW;
+    var gy2 = mmY + mmH - ((stage.ground[g][1].y - bz.min.y) / bzH) * mmH;
+    ui.beginPath();
+    ui.moveTo(gx1, gy1);
+    ui.lineTo(gx2, gy2);
+    ui.stroke();
+  }
+
+  // Draw platforms
+  ui.strokeStyle = "rgba(100, 180, 255, 0.3)";
+  for (var pp = 0; pp < stage.platform.length; pp++) {
+    var px1 = mmX + ((stage.platform[pp][0].x - bz.min.x) / bzW) * mmW;
+    var py1 = mmY + mmH - ((stage.platform[pp][0].y - bz.min.y) / bzH) * mmH;
+    var px2 = mmX + ((stage.platform[pp][1].x - bz.min.x) / bzW) * mmW;
+    ui.beginPath();
+    ui.moveTo(px1, py1);
+    ui.lineTo(px2, py1);
+    ui.stroke();
+  }
+
+  // Draw player dots
+  for (var d = 0; d < ports; d++) {
+    if (playerType[d] > -1 && player[d] && player[d].stocks > 0) {
+      var dx = mmX + ((player[d].phys.pos.x - bz.min.x) / bzW) * mmW;
+      var dy = mmY + mmH - ((player[d].phys.pos.y - bz.min.y) / bzH) * mmH;
+      // Clamp to minimap bounds
+      dx = Math.max(mmX + 1, Math.min(mmX + mmW - 1, dx));
+      dy = Math.max(mmY + 1, Math.min(mmY + mmH - 1, dy));
+
+      if (d === 0) {
+        // P1 is a larger bright dot
+        ui.fillStyle = "rgb(255, 255, 0)";
+        ui.fillRect(dx - 2, dy - 2, 5, 5);
+      } else {
+        // Other players are small dots
+        ui.fillStyle = playerType[d] === 1 ? "rgba(255, 100, 100, 0.8)" : "rgba(100, 255, 100, 0.8)";
+        ui.fillRect(dx - 1, dy - 1, 3, 3);
+      }
+    }
+  }
+
+  // Draw viewport rectangle
+  if (cameraEnabled) {
+    var vpHalfW = (600 / stage.scale) ; // half viewport in game units
+    var vpHalfH = (375 / stage.scale) ;
+    var camGX = player[0] ? player[0].phys.pos.x : 0;
+    var camGY = player[0] ? player[0].phys.pos.y : 0;
+    var vpLeft = mmX + ((camGX - vpHalfW - bz.min.x) / bzW) * mmW;
+    var vpTop = mmY + mmH - ((camGY + vpHalfH - bz.min.y) / bzH) * mmH;
+    var vpW = (vpHalfW * 2 / bzW) * mmW;
+    var vpH = (vpHalfH * 2 / bzH) * mmH;
+    ui.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ui.lineWidth = 1;
+    ui.strokeRect(vpLeft, vpTop, vpW, vpH);
+  }
+
+  ui.restore();
+}
+
 export function findPlayers (){
   var gps = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads() : []);
   /*if (typeof gps != "undefined"){
@@ -533,13 +617,26 @@ export function ensurePlayerSlot(index) {
   while (pause.length <= index) pause.push([true, true]);
   while (frameAdvance.length <= index) frameAdvance.push([true, true]);
   while (startingPoint.length <= index) {
-    var x = -60 + Math.random() * 120;
-    var y = 30 + Math.random() * 40;
+    // Use active stage bounds if available, otherwise default range
+    var stage = getActiveStage();
+    var spawnHalfW = 60;
+    var spawnBaseY = 30;
+    if (stage && stage.ground && stage.ground[0]) {
+      // Spread across 80% of the ground width
+      spawnHalfW = (stage.ground[0][1].x - stage.ground[0][0].x) * 0.4;
+    }
+    var x = -spawnHalfW + Math.random() * spawnHalfW * 2;
+    var y = spawnBaseY + Math.random() * 40;
     startingPoint.push([x, y]);
   }
   while (startingFace.length <= index) startingFace.push(Math.random() < 0.5 ? 1 : -1);
   while (respawnPoints.length <= index) {
-    var x2 = -50 + Math.random() * 100;
+    var stage2 = getActiveStage();
+    var respHalfW = 50;
+    if (stage2 && stage2.ground && stage2.ground[0]) {
+      respHalfW = (stage2.ground[0][1].x - stage2.ground[0][0].x) * 0.4;
+    }
+    var x2 = -respHalfW + Math.random() * respHalfW * 2;
     respawnPoints.push([x2, 50, Math.random() < 0.5 ? 1 : -1]);
   }
 }
@@ -969,10 +1066,35 @@ let delta = 0;
 let lastFrameTimeMs = 0;
 let lastUpdate = performance.now();
 
+// FPS counter (render)
+let fpsFrameCount = 0;
+let fpsDisplay = 60;
+let fpsLastTime = performance.now();
+// Frame time tracking (actual time between rendered frames)
+let frameTimeDisplay = 16;
+let lastFrameTimestamp = performance.now();
+// Game tick counter (logic)
+let tickCount = 0;
+let tickDisplay = 60;
+let tickLastTime = performance.now();
+let tickMsDisplay = 0;
+let tickMsAccum = 0;
+
 
 export function gameTick (oldInputBuffers){
   var start = performance.now();
   var diff = 0;
+
+  // Track game tick rate
+  tickCount++;
+  var tickNow = performance.now();
+  if (tickNow - tickLastTime >= 1000) {
+    tickDisplay = tickCount;
+    tickMsDisplay = Math.round(tickMsAccum / Math.max(tickCount, 1));
+    tickCount = 0;
+    tickMsAccum = 0;
+    tickLastTime = tickNow;
+  }
 
   var inputSize = Math.max(ports, 4);
   let input = [];
@@ -1118,6 +1240,8 @@ export function gameTick (oldInputBuffers){
     lastUpdate = now;
 
       resetHitQueue();
+    clearNearestEnemyCache();
+    rebuildLedgeCache();
     getActiveStage().movingPlatforms();
     destroyArticles();
     executeArticles();
@@ -1131,6 +1255,7 @@ export function gameTick (oldInputBuffers){
       }
     }
     checkPhantoms();
+    rebuildSpatialGrid();
     for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
         hitDetect(i,input);
@@ -1204,9 +1329,13 @@ export function gameTick (oldInputBuffers){
 
     saveGameState(input,ports);
 
-  setTimeout(gameTick, 16, input);
+  tickMsAccum += performance.now() - start;
+  // Store input for next tick - rAF-driven loop will call us
+  lastTickInput = input;
 
 }
+
+var lastTickInput = null;
 
 export function clearScreen (){
   //bg1.fillStyle = "rgb(0, 0, 0)";
@@ -1221,6 +1350,10 @@ let otherFrame = true;
 let fps30 = false;
 export function renderTick (){
   window.requestAnimationFrame(renderTick);
+  // Run game logic in sync with display refresh
+  if (lastTickInput !== null) {
+    gameTick(lastTickInput);
+  }
   otherFrame ^= true;
   if ((fps30 && otherFrame) || !fps30) {
     //console.log("------");
@@ -1302,19 +1435,76 @@ export function renderTick (){
       console.log(delta);*/
       //console.log("test2");
       var rStart = performance.now();
+      updateCamera();
       clearScreen();
+
+      // Apply camera transform to dynamic layers
+      if (cameraEnabled) {
+        // Redraw static stage with camera offset
+        fg1.clearRect(0, 0, layers.FG1.width, layers.FG1.height);
+        fg1.save();
+        applyCameraTransform(fg1);
+        drawStageInit();
+        fg1.restore();
+      }
+
+      bg2.save();
+      fg2.save();
+      applyCameraTransform(bg2);
+      applyCameraTransform(fg2);
+
       if (isShowSFX()) {
         drawBackground();
       }
       drawStage();
       for (var i = 0; i < ports; i++) {
         if (playerType[i] > -1) {
+          // Viewport culling: skip rendering off-screen players
+          if (cameraEnabled && !isOnScreen(player[i].phys.pos.x, player[i].phys.pos.y)) {
+            continue;
+          }
           renderPlayer(i);
         }
       }
       renderArticles();
       renderVfx();
+
+      bg2.restore();
+      fg2.restore();
+
+      // Render UI overlay (not camera-transformed)
       renderOverlay(true);
+
+      // Render minimap
+      if (cameraEnabled && ports > 4) {
+        renderMinimap();
+      }
+
+      // Performance display
+      fpsFrameCount++;
+      var fpsNow = performance.now();
+      var thisFrameTime = fpsNow - lastFrameTimestamp;
+      lastFrameTimestamp = fpsNow;
+      frameTimeDisplay = frameTimeDisplay * 0.9 + thisFrameTime * 0.1; // smoothed
+      if (fpsNow - fpsLastTime >= 1000) {
+        fpsDisplay = fpsFrameCount;
+        fpsFrameCount = 0;
+        fpsLastTime = fpsNow;
+      }
+      ui.fillStyle = "rgba(0,0,0,0.7)";
+      ui.fillRect(1020, 8, 172, 52);
+      ui.font = "bold 14px monospace";
+      ui.textAlign = "left";
+      // Render FPS
+      ui.fillStyle = fpsDisplay < 30 ? "red" : fpsDisplay < 50 ? "yellow" : "lime";
+      ui.fillText("DRAW " + fpsDisplay + "fps", 1028, 24);
+      // Game tick rate
+      ui.fillStyle = tickDisplay < 40 ? "red" : tickDisplay < 55 ? "yellow" : "lime";
+      ui.fillText("TICK " + tickDisplay + "tps " + tickMsDisplay + "ms", 1028, 40);
+      // Frame time
+      var ftMs = Math.round(frameTimeDisplay * 10) / 10;
+      ui.fillStyle = ftMs > 33 ? "red" : ftMs > 20 ? "yellow" : "lime";
+      ui.fillText("FRAME " + ftMs + "ms", 1028, 56);
 
       if (showDebug) {
         var diff = performance.now() - rStart;
@@ -1410,6 +1600,50 @@ export function startGame (){
   }
   changeGamemode(3);
   resetVfxQueue();
+
+  // Spread spawn positions across the active stage using platforms
+  var activeStg = getActiveStage();
+  if (activeStg && ports > 4) {
+    // Collect all spawnable surfaces: ground + platforms
+    var surfaces = [];
+    if (activeStg.ground) {
+      for (var gi = 0; gi < activeStg.ground.length; gi++) {
+        var g = activeStg.ground[gi];
+        surfaces.push({ left: g[0].x, right: g[1].x, y: g[0].y });
+      }
+    }
+    if (activeStg.platform) {
+      for (var pi = 0; pi < activeStg.platform.length; pi++) {
+        var p = activeStg.platform[pi];
+        surfaces.push({ left: p[0].x, right: p[1].x, y: p[0].y });
+      }
+    }
+    // Calculate total spawnable width across all surfaces
+    var totalWidth = 0;
+    for (var si2 = 0; si2 < surfaces.length; si2++) {
+      totalWidth += surfaces[si2].right - surfaces[si2].left;
+    }
+    // Distribute players evenly across all surfaces proportional to width
+    var spacing = totalWidth / ports;
+    var spawnIndex = 0;
+    var accumDist = 0;
+    for (var si3 = 0; si3 < surfaces.length && spawnIndex < ports; si3++) {
+      var surf = surfaces[si3];
+      var surfWidth = surf.right - surf.left;
+      var playersOnSurface = Math.round(surfWidth / spacing);
+      if (si3 === surfaces.length - 1) {
+        playersOnSurface = ports - spawnIndex; // give remaining to last surface
+      }
+      for (var pi2 = 0; pi2 < playersOnSurface && spawnIndex < ports; pi2++) {
+        var t = (pi2 + 0.5) / playersOnSurface;
+        var xPos = surf.left + t * surfWidth;
+        startingPoint[spawnIndex] = [xPos, surf.y + 5];
+        startingFace[spawnIndex] = spawnIndex % 2 === 0 ? 1 : -1;
+        spawnIndex++;
+      }
+    }
+  }
+
   for (var n = 0; n < ports; n++) {
     if (playerType[n] > -1) {
       initializePlayers(n, false);
@@ -1452,9 +1686,15 @@ export function startGame (){
   });
   findingPlayers = false;
   playing = true;
+
+  // Auto-enable camera for large stages or many players
+  if (stageSelect === 6 || ports > 4) {
+    enableCamera();
+  }
 }
 
 export function endGame (input){
+  disableCamera();
   gameEnd = false;
   resetLostStockQueue();
     setPhantonQueue([]);
@@ -1661,7 +1901,7 @@ export function start (){
   bg1.fillRect(0, 0, layers.BG1.width, layers.BG1.height);
   let nullInputBuffers = [];
   for (var _ni = 0; _ni < Math.max(ports, 4); _ni++) nullInputBuffers.push(nullInputs());
-  gameTick(nullInputBuffers);
+  lastTickInput = nullInputBuffers;
   renderTick();
 
   $("#effectsButton").click(function() {

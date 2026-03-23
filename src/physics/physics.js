@@ -758,6 +758,17 @@ function ensureEcbSquashData(i) {
   }
 }
 
+// Ledge occupancy cache - rebuilt once per frame instead of O(n) per player
+let occupiedLedges = {};
+export function rebuildLedgeCache() {
+  occupiedLedges = {};
+  for (let k = 0; k < ports; k++) {
+    if (playerType[k] > -1 && player[k] && player[k].phys.onLedge >= 0) {
+      occupiedLedges[player[k].phys.onLedge] = true;
+    }
+  }
+}
+
 
 function findAndResolveCollisions(i: number, input: any
     , oldBackward: bool
@@ -906,16 +917,7 @@ function dealWithLedges(i: number, input: any): void {
   let foundLedge = 0;
   if (player[i].phys.onLedge === -1 && !player[i].phys.ledgeRegrabCount) {
     for (let j = 0; j < activeStage.ledge.length; j++) {
-      let ledgeAvailable = true;
-      for (let k = 0; k < ports; k++) {
-        if (playerType[k] > -1) {
-          if (k !== i) {
-            if (player[k].phys.onLedge === j) {
-              ledgeAvailable = false;
-            }
-          }
-        }
-      }
+      const ledgeAvailable = !occupiedLedges[j];
       if (ledgeAvailable && !player[i].phys.grounded && player[i].hit.hitstun <= 0) {
         const x = activeStage[activeStage.ledge[j][0]][activeStage.ledge[j][1]][activeStage.ledge[j][2]].x;
         const y = activeStage[activeStage.ledge[j][0]][activeStage.ledge[j][1]][activeStage.ledge[j][2]].y;

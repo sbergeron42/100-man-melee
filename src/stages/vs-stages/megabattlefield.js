@@ -106,7 +106,7 @@ export default {
   // Scale down so the big stage fits on the 1200x750 canvas
   // Normal BF: scale 4.5, ground spans 136.8 units = 615px
   // Mega BF: ground spans 680 units, want ~1100px => scale ~1.6
-  scale: 1.6,
+  scale: 5,
   offset: [600, 480],
   movingPlats: [],
   movingPlatforms: function () {

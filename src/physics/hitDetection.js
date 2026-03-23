@@ -21,10 +21,56 @@ export function setPhantonQueue(val){
 }
 const angleConversion = Math.PI / 180;
 
+// --- Spatial Hash for O(n) hit detection ---
+var spatialCellSize = 60; // game units per cell
+var spatialGrid = {};     // cellKey -> [playerIndex, ...]
+var spatialPlayerCells = []; // playerIndex -> [cellKey, ...]
+
+export function rebuildSpatialGrid() {
+  spatialGrid = {};
+  spatialPlayerCells = [];
+  var radius = 40; // search radius around each player
+  for (var i = 0; i < ports; i++) {
+    spatialPlayerCells[i] = [];
+    if (playerType[i] <= -1 || !player[i] || !player[i].phys) continue;
+    var px = player[i].phys.pos.x;
+    var py = player[i].phys.pos.y;
+    var minCX = Math.floor((px - radius) / spatialCellSize);
+    var maxCX = Math.floor((px + radius) / spatialCellSize);
+    var minCY = Math.floor((py - radius) / spatialCellSize);
+    var maxCY = Math.floor((py + radius) / spatialCellSize);
+    for (var cx = minCX; cx <= maxCX; cx++) {
+      for (var cy = minCY; cy <= maxCY; cy++) {
+        var key = cx + "," + cy;
+        if (!spatialGrid[key]) spatialGrid[key] = [];
+        spatialGrid[key].push(i);
+        spatialPlayerCells[i].push(key);
+      }
+    }
+  }
+}
+
+function getNearbyPlayers(p) {
+  var nearby = {};
+  var cells = spatialPlayerCells[p];
+  if (!cells) return nearby;
+  for (var c = 0; c < cells.length; c++) {
+    var bucket = spatialGrid[cells[c]];
+    if (bucket) {
+      for (var b = 0; b < bucket.length; b++) {
+        nearby[bucket[b]] = true;
+      }
+    }
+  }
+  return nearby;
+}
+// --- End Spatial Hash ---
+
 export function hitDetect (p,input){
     var attackerClank = false;
+    var nearby = getNearbyPlayers(p);
     for (var i = 0; i < ports; i++) {
-        if (playerType[i] > -1) {
+        if (playerType[i] > -1 && nearby[i]) {
             if (i != p) {
                 // check if victim is already in hitList
                 var inHitList = false;

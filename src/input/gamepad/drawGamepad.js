@@ -69,6 +69,7 @@ export function updateGamepadSVGColour(i : number, id : string) : void {
     return void 0;
   }
   const svg = svgObject.contentDocument;
+  if (!svg) return;
 
   const light  = swatches[colour].light;
   const base   = swatches[colour].base;
@@ -79,6 +80,7 @@ export function updateGamepadSVGColour(i : number, id : string) : void {
   const main  = svg.getElementById("main");
   const lobeL = svg.getElementById("lobeL");
   const lobeR = svg.getElementById("lobeR");
+  if (!main || !lobeL || !lobeR) return;
   main.style.fill = base;
   main.style.stroke = dark;
   lobeL.style.fill = base;

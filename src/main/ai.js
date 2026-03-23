@@ -5,28 +5,42 @@ import {activeStage as aS} from "../stages/activeStage";
 /* eslint-disable */
 
 let a = 0;
+// Cache nearest enemy per frame to avoid O(n) scan per AI player
+var nearestEnemyCache = {};
+var nearestEnemyCacheFrame = -1;
+var aiFrameCounter = 0;
+
+export function clearNearestEnemyCache() {
+  aiFrameCounter++;
+}
+
 export function NearestEnemy(cpu,p){
+  // Return cached result if available this frame
+  if (nearestEnemyCacheFrame === aiFrameCounter && nearestEnemyCache[p] !== undefined) {
+    return nearestEnemyCache[p];
+  }
+  if (nearestEnemyCacheFrame !== aiFrameCounter) {
+    nearestEnemyCache = {};
+    nearestEnemyCacheFrame = aiFrameCounter;
+  }
+
   let nearestEnemy = -1;
   let enemyDistance = 100000;
   for (let i = 0; i < ports; i++) {
-    if (playerType[i] > -1) {
-      if (playerType[i] > -1 && i != p && player[i].actionState != "SLEEP") {
-        if (i != p) {
-          const dist = Math.pow(cpu.phys.pos.x - player[i].phys.pos.x, 2) + Math.pow(cpu.phys.pos.y - player[i].phys.pos.y,
-                  2);
-          if (dist < enemyDistance) {
-            enemyDistance = dist;
-            nearestEnemy = i;
-          }
-        }
+    if (playerType[i] > -1 && i != p && player[i].actionState != "SLEEP") {
+      const dx = cpu.phys.pos.x - player[i].phys.pos.x;
+      const dy = cpu.phys.pos.y - player[i].phys.pos.y;
+      const dist = dx * dx + dy * dy;
+      if (dist < enemyDistance) {
+        enemyDistance = dist;
+        nearestEnemy = i;
       }
     }
   }
   if (nearestEnemy == -1) {
     nearestEnemy = 0;
-    console.log("cant find nearest enemy");
-    // fail safe so it doesnt crash at least
   }
+  nearestEnemyCache[p] = nearestEnemy;
   return nearestEnemy;
 }
 export function generalAI(i) {

@@ -16,6 +16,7 @@ import {
      holiday,
     ports
 } from "main/main";
+import {cameraEnabled} from "main/camera";
 import {gameSettings} from "settings";
 import {makeColour} from "main/vfx/makeColour";
 import {actionStates} from "physics/actionStateShortcuts";
@@ -173,7 +174,7 @@ export function renderPlayer(i) {
         } else if (player[i].phys.chargeFrames % 4 == 1) {
             temX -= 2;
         }
-        if (temX > 1220 || temX < -20 || temY > 880 || temY < -30) {
+        if (!cameraEnabled && (temX > 1220 || temX < -20 || temY > 880 || temY < -30)) {
             var pA = new Vec2D(temX - 600, temY - 375);
             var pB = new Vec2D(0, 0);
             var s = (pA.y - pB.y) / (pA.x - pB.x);
