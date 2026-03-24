@@ -12,6 +12,22 @@ export default {
   },
   main : function(p,input){
     player[p].timer++;
+    // UCF Dashback Fix (tauKhan tilt intent algorithm):
+    // At frame 2 of tilt turn, check if the stick moved fast enough to indicate
+    // an intentional dashback. If delta over 2 frames > 0.9375 (75/80 raw units)
+    // and stick is in the smash zone, convert tilt turn into smash turn.
+    if (player[p].timer === 2) {
+      var stickX = input[p][0].lsX * player[p].phys.face;
+      if (stickX < -0.79) {
+        var rawCur = input[p][0].rawX !== undefined ? input[p][0].rawX : input[p][0].lsX;
+        var rawPrev = input[p][2].rawX !== undefined ? input[p][2].rawX : input[p][2].lsX;
+        var delta = rawCur - rawPrev;
+        if (delta * delta > 0.9375 * 0.9375) {
+          actionStates[characterSelections[p]].SMASHTURN.init(p,input);
+          return;
+        }
+      }
+    }
     if (player[p].timer === 6){
       player[p].phys.face *= -1;
     }

@@ -4,7 +4,23 @@
       "Bash(npm install:*)",
       "Bash(npx webpack:*)",
       "Bash(grep -v \"^$\")",
-      "Bash(npx http-server:*)"
+      "Bash(npx http-server:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.20xx.me)",
+      "WebFetch(domain:www.ssbwiki.com)",
+      "WebFetch(domain:supersmash.blog)",
+      "WebFetch(domain:www.smashladder.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api:*)",
+      "Bash(where gh:*)",
+      "Bash('/c/Program Files/GitHub CLI/gh.exe' api repos/AltimorTASDK/ucf/contents/src/dashback/dashback.cpp --jq .content)",
+      "Bash(echo EXIT:$?)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" api repos/AltimorTASDK/ucf/contents/src/dashback/dashback.cpp)",
+      "Bash(cmd.exe /c \"where gh\" 2>/dev/null)",
+      "Bash(curl:*)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(t[''''path'''']\\) for t in data.get\\(''''tree'''',[]\\)]\")",
+      "WebFetch(domain:smashboards.com)"
     ]
   }
 }

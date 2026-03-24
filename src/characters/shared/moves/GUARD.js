@@ -42,10 +42,26 @@ export default {
         actionStates[characterSelections[p]].GRAB.init(p,input);
         return true;
       }
+      // UCF Shield Drop Fix: On platforms, suppress spotdodge when stick is at
+      // the gate rim and Y is between -0.7 and -0.8, allowing shield drop instead.
+      // Real UCF moves the spotdodge threshold from -0.7 to -0.8 on platforms
+      // when the stick is against the rim (magnitude check).
       else if ((input[p][0].lsY < -0.7 && input[p][4].lsY > -0.3) || input[p][0].csY < -0.7){
-        player[p].phys.shielding = false;
-        actionStates[characterSelections[p]].ESCAPEN.init(p,input);
-        return true;
+        // Check if on platform and stick is at rim — UCF suppresses spotdodge
+        var ucfSuppressSpotdodge = false;
+        if (player[p].phys.onSurface[0] === 1 && input[p][0].csY >= -0.7) {
+          // Rim check: stick magnitude near max (sqrt(x^2 + y^2) > 0.9)
+          var rimMag = input[p][0].lsX * input[p][0].lsX + input[p][0].lsY * input[p][0].lsY;
+          if (rimMag > 0.81 && input[p][0].lsY > -0.8) {
+            ucfSuppressSpotdodge = true;
+          }
+        }
+        if (!ucfSuppressSpotdodge) {
+          player[p].phys.shielding = false;
+          actionStates[characterSelections[p]].ESCAPEN.init(p,input);
+          return true;
+        }
+        // Fall through to shield drop check below
       }
       else if ((input[p][0].lsX*player[p].phys.face > 0.7 && input[p][4].lsX*player[p].phys.face < 0.3) || input[p][0].csX*player[p].phys.face > 0.7){
         player[p].phys.shielding = false;
@@ -57,10 +73,8 @@ export default {
         actionStates[characterSelections[p]].ESCAPEB.init(p,input);
         return true;
       }
-      // UCF Shield Drop Fix: widened input zone and shorter history window
-      // Original: lsY < -0.65 with 6-frame history
-      // UCF: lsY < -0.56 with 4-frame history (more forgiving)
-      else if (input[p][0].lsY < -0.56 && input[p][4].lsY > -0.3 && player[p].phys.onSurface[0] === 1){
+      // Shield drop: vanilla threshold (-0.65) on platforms
+      if (input[p][0].lsY < -0.65 && input[p][6].lsY > -0.3 && player[p].phys.onSurface[0] === 1){
         player[p].phys.shielding = false;
         actionStates[characterSelections[p]].PASS.init(p,input);
         return true;

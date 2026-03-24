@@ -493,17 +493,7 @@ export function checkForDash (p,input){
 }
 
 export function checkForSmashTurn (p,input){
-  // UCF Dashback Fix: Check current frame AND 1-frame-ago for the smash threshold.
-  // If the stick was in neutral/forward 2 OR 3 frames ago and is now past the threshold,
-  // count it as a smash turn. This catches fast stick transitions that skip the threshold
-  // on the exact frame the original code checks.
-  var cur = input[p][0].lsX * player[p].phys.face;
-  var prev1 = input[p][1].lsX * player[p].phys.face;
-  var prev2 = input[p][2].lsX * player[p].phys.face;
-  var prev3 = input[p][3].lsX * player[p].phys.face;
-  var smashNow = cur < -0.79 || prev1 < -0.79;
-  var wasNeutral = prev2 > -0.3 || prev3 > -0.3;
-  return smashNow && wasNeutral;
+  return input[p][0].lsX * player[p].phys.face < -0.79 && input[p][2].lsX * player[p].phys.face > -0.3;
 }
 
 export function tiltTurnDashBuffer (p,input){
