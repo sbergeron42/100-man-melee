@@ -1260,6 +1260,11 @@ function updateRemotePlayer(i) {
   player[i].phys.cVel.y = state.velY;
   player[i].phys.grounded = state.grounded;
   player[i].phys.shielding = state.shielding;
+  // Update hurtbox position so hit detection works against remote players
+  player[i].phys.hurtbox.min.x = state.x - 4;
+  player[i].phys.hurtbox.min.y = state.y + 18;
+  player[i].phys.hurtbox.max.x = state.x + 4;
+  player[i].phys.hurtbox.max.y = state.y;
 }
 
 let delta = 0;

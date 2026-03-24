@@ -190,6 +190,10 @@ export function changeCharacter(i, c) {
   player[i].timer = 0;
   player[i].charAttributes = chars[characterSelections[i]].attributes;
   player[i].charHitboxes = chars[characterSelections[i]].hitboxes;
+  // Send character selection to server in network mode
+  if (networkMode && i === 0) {
+    sendCharacterSelect(c);
+  }
 }
 
 function cancelSetTag() {

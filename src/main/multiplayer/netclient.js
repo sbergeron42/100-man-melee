@@ -261,11 +261,15 @@ export function getInterpolatedState(id) {
   var cur = rs.current;
   var prev = rs.previous;
 
-  // Position interpolation: smooth between prev and current, allow extrapolation
+  // Position interpolation with render delay
+  // We render one update behind to always have two points to interpolate between
   var alpha = 1;
   if (dt > 0) {
-    alpha = Math.min((now - rs.prevTimestamp) / dt, 2.0);
+    var elapsed = now - rs.timestamp;
+    // Clamp: don't extrapolate more than 1 update period ahead
+    alpha = Math.min(Math.max(elapsed / dt, 0), 1.5);
   }
+  // Interpolate from previous toward current
   var ix = prev.x + (cur.x - prev.x) * alpha;
   var iy = prev.y + (cur.y - prev.y) * alpha;
 
