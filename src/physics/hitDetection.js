@@ -1,4 +1,4 @@
-import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports} from "main/main";
+import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports, setRemoteHitTimer} from "main/main";
 
 import {gameSettings} from "settings";
 import {sounds, setCurrentSfxPlayer} from "main/sfx";
@@ -706,6 +706,19 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
   screenShake(player[v].hit.knockback);
   percentShake(player[v].hit.knockback, v);
   hitEffectsAndSound(v,h,isThrow, hitbox.type);
+
+  // For remote players: apply knockback velocity immediately and set visual override timer
+  if (playerType[v] === 3) {
+    var kb = player[v].hit.knockback;
+    var angle = getLaunchAngle(player[v].hit.angle, kb, player[v].phys.grounded);
+    player[v].phys.kVel.x = getHorizontalVelocity(kb, angle);
+    player[v].phys.kVel.y = getVerticalVelocity(kb, angle, player[v].phys.grounded, player[v].hit.angle);
+    player[v].phys.cVel.x = 0;
+    player[v].phys.cVel.y = 0;
+    // Let the knockback visual play for hitstun frames
+    var hitstunFrames = getHitstun(kb);
+    setRemoteHitTimer(v, Math.min(hitstunFrames, 40)); // cap at 40 frames
+  }
 }
 
 export function hitEffectsAndSound(v,h, isThrow, type){

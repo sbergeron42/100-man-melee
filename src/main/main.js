@@ -1240,7 +1240,31 @@ export function update (i,inputBuffers){
   physics(i, inputBuffers);
 }
 
+// Track local hit visual overrides for remote players
+var remoteHitTimers = {}; // game index -> frames remaining of local override
+
+export function setRemoteHitTimer(i, frames) {
+  remoteHitTimers[i] = frames;
+}
+
 function updateRemotePlayer(i) {
+  // If this remote player was hit locally, let the hit animation play out
+  // before resuming network sync
+  if (remoteHitTimers[i] && remoteHitTimers[i] > 0) {
+    remoteHitTimers[i]--;
+    // Still run minimal physics for knockback visual
+    player[i].phys.pos.x += player[i].phys.kVel.x;
+    player[i].phys.pos.y += player[i].phys.kVel.y;
+    // Apply gravity
+    player[i].phys.kVel.y -= 0.1;
+    // Update hurtbox
+    player[i].phys.hurtbox.min.x = player[i].phys.pos.x - 4;
+    player[i].phys.hurtbox.min.y = player[i].phys.pos.y + 18;
+    player[i].phys.hurtbox.max.x = player[i].phys.pos.x + 4;
+    player[i].phys.hurtbox.max.y = player[i].phys.pos.y;
+    return;
+  }
+
   // Find the server ID that maps to this game index
   var serverId = -1;
   for (var sid in serverIdToGameIndex) {
