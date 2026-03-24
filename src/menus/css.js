@@ -83,6 +83,18 @@ export const occupiedCpu = [false, false, false, false];
 
 export let readyToFight = false;
 
+function getCSSPanelCount() {
+  return battleRoyalePending ? 1 : 4;
+}
+
+// Offset to center panels when fewer than 4
+function getCSSPanelOffset() {
+  if (!battleRoyalePending) return 0;
+  // Normal: panel 0 starts at x=145. Center of 4 panels = x=600-105=495
+  // Single panel center: (1200 - 210) / 2 = 495. So offset = 495 - 145 = 350
+  return 350;
+}
+
 export let rtfFlash = 25;
 export let rtfFlashD = 1;
 const gameSettingsText = {
@@ -452,13 +464,23 @@ export function cssControls(i, input) {
   if (readyToFight && choosingTag == -1) {
     if (pause[i][0] && !pause[i][1]) {
       sounds.menuForward.play();
-      changeGamemode(6);
-      syncGameMode(6);
+      if (battleRoyalePending) {
+        setStageSelect(6);
+        startGame();
+      } else {
+        changeGamemode(6);
+        syncGameMode(6);
+      }
     }
   } else if (choosingTag == -1 && input[i][0].du && !input[i][1].du) {
     sounds.menuForward.play();
-    changeGamemode(6);
-    syncGameMode(6);
+    if (battleRoyalePending) {
+      setStageSelect(6);
+      startGame();
+    } else {
+      changeGamemode(6);
+      syncGameMode(6);
+    }
   } else if (choosingTag == -1 && input[i][0].dr && !input[i][1].dr) {
     chosenChar[i] = 3;
     changeCharacter(i, 3);
@@ -663,49 +685,51 @@ export function drawCSSInit() {
         break;
     }
   }
+  var panelCount = getCSSPanelCount();
+  var po = getCSSPanelOffset();
   bg1.fillStyle = "rgb(49, 52, 56)";
-  for (var i = 0; i < 4; i++) {
-    bg1.fillRect(145 + i * 225, 430, 210, 280);
-    bg1.strokeRect(145 + i * 225, 430, 210, 280);
+  for (var i = 0; i < panelCount; i++) {
+    bg1.fillRect(145 + po + i * 225, 430, 210, 280);
+    bg1.strokeRect(145 + po + i * 225, 430, 210, 280);
   }
   bg1.fillStyle = "rgb(55, 58, 62)";
   bg1.strokeStyle = "rgb(72, 77, 85)";
-  for (var i = 0; i < 4; i++) {
-    bg1.fillRect(158 + i * 225, 440, 184, 260);
-    bg1.strokeRect(158 + i * 225, 440, 184, 260);
+  for (var i = 0; i < panelCount; i++) {
+    bg1.fillRect(158 + po + i * 225, 440, 184, 260);
+    bg1.strokeRect(158 + po + i * 225, 440, 184, 260);
   }
   bg1.fillStyle = "rgba(255,255,255,0.1)";
-  for (var i = 0; i < 4; i++) {
-    bg1.fillRect(158 + i * 225, 630, 184, 50);
+  for (var i = 0; i < panelCount; i++) {
+    bg1.fillRect(158 + po + i * 225, 630, 184, 50);
   }
   bg1.strokeStyle = "rgba(0,0,0,0.2)";
   bg1.fillStyle = "rgba(0,0,0,0.2)";
   bg1.lineWidth = 15;
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < panelCount; i++) {
     bg1.beginPath();
-    bg1.moveTo(150 + i * 225, 435);
-    bg1.lineTo(350 + i * 225, 705);
+    bg1.moveTo(150 + po + i * 225, 435);
+    bg1.lineTo(350 + po + i * 225, 705);
     bg1.closePath();
     bg1.stroke();
     bg1.beginPath();
-    bg1.arc(250 + i * 225, 570, 60, 0, twoPi);
+    bg1.arc(250 + po + i * 225, 570, 60, 0, twoPi);
     bg1.closePath();
     bg1.stroke();
     bg1.beginPath();
-    bg1.moveTo(150 + i * 225, 570);
-    bg1.lineTo(350 + i * 225, 570);
+    bg1.moveTo(150 + po + i * 225, 570);
+    bg1.lineTo(350 + po + i * 225, 570);
     bg1.closePath();
     bg1.stroke();
   }
   bg1.lineWidth = 3;
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < panelCount; i++) {
     for (var j = 0; j < 7; j++) {
       bg1.beginPath();
-      bg1.arc(165 + i * 225 + j * 30, 450, 11, 0, twoPi);
+      bg1.arc(165 + po + i * 225 + j * 30, 450, 11, 0, twoPi);
       bg1.closePath();
       bg1.fill();
       bg1.beginPath();
-      bg1.arc(165 + i * 225 + j * 30, 690, 10, 0, twoPi);
+      bg1.arc(165 + po + i * 225 + j * 30, 690, 10, 0, twoPi);
       bg1.closePath();
       bg1.stroke();
       if (j == 3) {
@@ -720,7 +744,9 @@ export function drawCSS() {
   ui.fillStyle = "rgb(219, 219, 219)";
   ui.save();
   ui.scale(1.25, 1);
-  if (versusMode) {
+  if (battleRoyalePending) {
+    ui.fillText("100-Man Battle Royale!", 380, 117);
+  } else if (versusMode) {
     ui.fillText("An endless KO fest!", 393, 117);
   } else {
     ui.fillText("4-man survival test!", 390, 117);
@@ -756,7 +782,9 @@ export function drawCSS() {
     bg1.fill();
   }
   ui.restore();
-  for (var i = 0; i < 4; i++) {
+  var dPanels = getCSSPanelCount();
+  var dpo = getCSSPanelOffset();
+  for (var i = 0; i < dPanels; i++) {
     if (playerType[i] > -1) {
       if (playerType[i] == 0 || playerType[i] == 2) {
         switch (i) {
@@ -778,21 +806,22 @@ export function drawCSS() {
       } else {
         ui.fillStyle = "rgb(91, 91, 91)";
       }
-      ui.fillRect(147 + i * 225, 432, 206, 276);
+      var px = dpo + i * 225;
+      ui.fillRect(147 + px, 432, 206, 276);
       ui.fillStyle = "rgba(0,0,0,0.5)";
       ui.beginPath();
-      ui.moveTo(152 + i * 225, 465);
-      ui.lineTo(210 + i * 225, 465);
-      ui.lineTo(230 + i * 225, 450);
-      ui.lineTo(318 + i * 225, 450);
-      ui.bezierCurveTo(338 + i * 225, 450, 338 + i * 225, 450, 338 + i * 225, 470)
-      ui.lineTo(338 + i * 225, 708);
-      ui.lineTo(152 + i * 225, 708);
+      ui.moveTo(152 + px, 465);
+      ui.lineTo(210 + px, 465);
+      ui.lineTo(230 + px, 450);
+      ui.lineTo(318 + px, 450);
+      ui.bezierCurveTo(338 + px, 450, 338 + px, 450, 338 + px, 470)
+      ui.lineTo(338 + px, 708);
+      ui.lineTo(152 + px, 708);
       ui.closePath();
       ui.fill();
       ui.save();
       ui.fillStyle = "rgba(0, 0, 0, 0.3)";
-      ui.translate(250 + i * 225, 615);
+      ui.translate(250 + px, 615);
       ui.scale(1, 0.3);
       ui.beginPath();
       ui.arc(0, 0, 50, 0, twoPi);
@@ -801,8 +830,8 @@ export function drawCSS() {
       ui.restore();
       ui.fillStyle = "black";
       ui.strokeStyle = "rgb(102, 102, 102)";
-      ui.fillRect(152 + i * 225, 640, 196, 60);
-      ui.strokeRect(152 + i * 225, 640, 196, 60);
+      ui.fillRect(152 + px, 640, 196, 60);
+      ui.strokeRect(152 + px, 640, 196, 60);
       ui.save();
       ui.fillStyle = "rgb(84, 84, 84)";
       ui.font = "italic 900 45px Arial";
@@ -811,14 +840,15 @@ export function drawCSS() {
       if (playerType[i] == 1) {
         text = "CP";
       }
-      ui.fillText(text, 87 + i * 225 / (14 / 8), 690)
+      ui.fillText(text, 87 + px / (14 / 8), 690)
       ui.restore();
 
       ui.textAlign = "start";
     }
   }
   ui.fillStyle = "rgb(82, 81, 81)";
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < dPanels; i++) {
+    var px2 = dpo + i * 225;
     ui.fillStyle = "rgb(82, 81, 81)";
     switch (playerType[i]) {
       case 0:
@@ -832,37 +862,38 @@ export function drawCSS() {
         break;
     }
     ui.beginPath();
-    ui.moveTo(139 + i * 225, 420);
-    ui.lineTo(220 + i * 225, 420);
-    ui.lineTo(237 + i * 225, 432);
-    ui.lineTo(215 + i * 225, 455);
-    ui.lineTo(142 + i * 225, 455);
-    ui.lineTo(139 + i * 225, 452);
+    ui.moveTo(139 + px2, 420);
+    ui.lineTo(220 + px2, 420);
+    ui.lineTo(237 + px2, 432);
+    ui.lineTo(215 + px2, 455);
+    ui.lineTo(142 + px2, 455);
+    ui.lineTo(139 + px2, 452);
     ui.closePath();
     ui.fill();
   }
   ui.fillStyle = "rgba(0, 0, 0,0.7)";
   ui.strokeStyle = "rgba(0, 0, 0,0.7)";
   ui.lineWidth = 4;
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < dPanels; i++) {
+    var px3 = dpo + i * 225;
     ui.beginPath();
-    ui.moveTo(160 + i * 225, 424);
-    ui.lineTo(215 + i * 225, 424);
-    ui.lineTo(228 + i * 225, 432);
-    ui.lineTo(210 + i * 225, 451);
-    ui.lineTo(160 + i * 225, 451);
+    ui.moveTo(160 + px3, 424);
+    ui.lineTo(215 + px3, 424);
+    ui.lineTo(228 + px3, 432);
+    ui.lineTo(210 + px3, 451);
+    ui.lineTo(160 + px3, 451);
     ui.closePath();
     ui.fill();
     ui.beginPath();
-    ui.moveTo(139 + i * 225, 420);
-    ui.lineTo(151 + i * 225, 424);
-    ui.lineTo(151 + i * 225, 451);
-    ui.lineTo(140 + i * 225, 451);
+    ui.moveTo(139 + px3, 420);
+    ui.lineTo(151 + px3, 424);
+    ui.lineTo(151 + px3, 451);
+    ui.lineTo(140 + px3, 451);
     ui.stroke();
   }
   ui.fillStyle = "rgb(82, 81, 81)";
   ui.font = "700 22px Arial";
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < dPanels; i++) {
     ui.fillStyle = "rgb(82, 81, 81)";
     var text = "N/A";
     switch (playerType[i]) {
@@ -882,9 +913,9 @@ export function drawCSS() {
         break;
     }
 
-    ui.fillText(text, 163 + i * 225, 445);
+    ui.fillText(text, 163 + dpo + i * 225, 445);
   }
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < dPanels; i++) {
     if (playerType[i] > -1) {
       var frame = Math.floor(player[i].timer);
       if (frame == 0) {
@@ -940,28 +971,29 @@ export function drawCSS() {
         ui.fill();
       }
       ui.globalAlpha = 1;
+      var px4 = dpo + i * 225;
       if (playerType[i] == 1) {
         ui.fillStyle = "rgba(0,0,0,0.5)";
         ui.strokeStyle = "rgb(102, 102, 102)";
-        ui.fillRect(152 + i * 225, 555, 196, 85);
-        ui.strokeRect(152 + i * 225, 555, 196, 85);
+        ui.fillRect(152 + px4, 555, 196, 85);
+        ui.strokeRect(152 + px4, 555, 196, 85);
         ui.fillStyle = "rgb(177, 177, 177)";
         ui.save();
         ui.font = "900 18px Arial";
         ui.scale(1.2, 1);
-        ui.fillText("CPU Level", (152 + 10 + i * 225) / 1.2, 575);
+        ui.fillText("CPU Level", (152 + 10 + px4) / 1.2, 575);
         ui.restore();
-        var sliderGrad = ui.createLinearGradient(152 + 10 + i * 225, 0, 152 + 196 - 20 + i * 225, 0);
+        var sliderGrad = ui.createLinearGradient(152 + 10 + px4, 0, 152 + 196 - 20 + px4, 0);
         sliderGrad.addColorStop(0, "rgb(0, 47, 168)");
         sliderGrad.addColorStop(0.5, "rgb(168, 162, 0)");
         sliderGrad.addColorStop(1, "rgb(168, 0, 0)");
         ui.fillStyle = sliderGrad;
-        ui.fillRect(152 + 15 + i * 225, 592, 166, 5);
+        ui.fillRect(152 + 15 + px4, 592, 166, 5);
         ui.fillStyle = "black";
-        ui.fillRect(152 + 18 + i * 225, 594, 160, 1);
+        ui.fillRect(152 + 18 + px4, 594, 160, 1);
         ui.fillStyle = "rgb(214, 35, 35)";
         ui.beginPath();
-        ui.arc(cpuSlider[i].x, cpuSlider[i].y, 17, 0, twoPi);
+        ui.arc(cpuSlider[i].x + dpo, cpuSlider[i].y, 17, 0, twoPi);
         ui.closePath();
         ui.fill();
         ui.save();
@@ -970,22 +1002,22 @@ export function drawCSS() {
         ui.lineWidth = 2;
         ui.font = "900 30px Arial";
         ui.textAlign = "center";
-        ui.strokeText(player[i].difficulty, cpuSlider[i].x, cpuSlider[i].y + 11);
-        ui.fillText(player[i].difficulty, cpuSlider[i].x, cpuSlider[i].y + 11);
+        ui.strokeText(player[i].difficulty, cpuSlider[i].x + dpo, cpuSlider[i].y + 11);
+        ui.fillText(player[i].difficulty, cpuSlider[i].x + dpo, cpuSlider[i].y + 11);
         ui.restore();
       }
       ui.fillStyle = "black";
       ui.strokeStyle = "rgb(102, 102, 102)";
-      ui.fillRect(160 + i * 225, 620, 180, 40);
-      ui.strokeRect(160 + i * 225, 620, 180, 40);
+      ui.fillRect(160 + px4, 620, 180, 40);
+      ui.strokeRect(160 + px4, 620, 180, 40);
       ui.font = "900 24px Arial";
       if (playerType[i] == 0) {
         ui.fillStyle = "rgb(42, 42, 42)";
-        ui.fillRect(162 + i * 225, 622, 22, 37);
-        ui.fillRect(316 + i * 225, 622, 22, 37);
+        ui.fillRect(162 + px4, 622, 22, 37);
+        ui.fillRect(316 + px4, 622, 22, 37);
         ui.fillStyle = "rgb(83, 83, 83)";
-        ui.fillText("?", 166 + i * 225, 648);
-        ui.fillText("x", 319 + i * 225, 647);
+        ui.fillText("?", 166 + px4, 648);
+        ui.fillText("x", 319 + px4, 647);
       }
       ui.font = "500 28px Arial";
       ui.fillStyle = "white";
@@ -1013,7 +1045,7 @@ export function drawCSS() {
         var text = tagText[i];
       }
       ui.textAlign = "center";
-      ui.fillText(text, 250 + i * 225, 650);
+      ui.fillText(text, 250 + dpo + i * 225, 650);
       ui.textAlign = "start";
     }
   }
@@ -1136,7 +1168,7 @@ export function drawCSS() {
     }
   }
   // 72 95
-  for (var i = 0; i < Math.min(ports, 4); i++) {
+  for (var i = 0; i < Math.min(ports, dPanels); i++) {
 
     switch (handType[i]) {
       case 0:
@@ -1171,10 +1203,11 @@ export function drawCSS() {
     ui.strokeText("P" + (i + 1), handPos[i].x - 15, handPos[i].y + 60);
   }
   var readyPlayers = 0;
-  for (var k = 0; k < 4; k++) {
+  var minReady = battleRoyalePending ? 1 : 2;
+  for (var k = 0; k < Math.min(ports, 4); k++) {
     if (playerType[k] > -1) {
       readyPlayers++;
-      if (readyPlayers >= 2) {
+      if (readyPlayers >= minReady) {
         readyToFight = true;
       } else {
         readyToFight = false;
@@ -1313,6 +1346,9 @@ export function brCSSControls(i, input) {
   }
 }
 
+// Character portrait images in CHARIDS order: Marth=0, Puff=1, Fox=2, Falco=3, Falcon=4
+var brCharPics = [marthPic, puffPic, foxPic, falcoPic, falconPic];
+
 export function drawBRCSS() {
   clearScreen();
 
@@ -1320,9 +1356,10 @@ export function drawBRCSS() {
   bg1.fillStyle = "rgb(20, 20, 35)";
   bg1.fillRect(0, 0, 1200, 750);
 
-  // Title
   ui.save();
   ui.textAlign = "center";
+
+  // Title
   ui.font = "900 60px Arial";
   ui.fillStyle = "rgb(255, 50, 50)";
   ui.strokeStyle = "black";
@@ -1330,60 +1367,71 @@ export function drawBRCSS() {
   ui.strokeText("100-MAN MELEE", 600, 80);
   ui.fillText("100-MAN MELEE", 600, 80);
 
-  ui.font = "700 30px Arial";
+  ui.font = "700 28px Arial";
   ui.fillStyle = "rgb(200, 200, 200)";
   ui.fillText("SELECT YOUR FIGHTER", 600, 130);
 
-  // Character boxes
-  var boxW = 160;
-  var boxH = 120;
-  var totalW = brCharNames.length * boxW + (brCharNames.length - 1) * 20;
+  // Character portrait boxes
+  var boxW = 180;
+  var boxH = 160;
+  var gap = 25;
+  var totalW = brCharNames.length * boxW + (brCharNames.length - 1) * gap;
   var startX = (1200 - totalW) / 2;
-  var boxY = 250;
+  var boxY = 180;
 
   for (var c = 0; c < brCharNames.length; c++) {
-    var bx = startX + c * (boxW + 20);
+    var bx = startX + c * (boxW + gap);
 
-    // Box background
+    // Selection highlight
     if (c === brCharSelected) {
       ui.fillStyle = "rgb(255, 215, 0)";
-      ui.fillRect(bx - 4, boxY - 4, boxW + 8, boxH + 8);
-      ui.fillStyle = "rgb(60, 60, 90)";
-    } else {
-      ui.fillStyle = "rgb(40, 40, 60)";
+      ui.fillRect(bx - 5, boxY - 5, boxW + 10, boxH + 10);
     }
+
+    // Box background
+    ui.fillStyle = c === brCharSelected ? "rgb(50, 50, 80)" : "rgb(30, 30, 50)";
     ui.fillRect(bx, boxY, boxW, boxH);
 
-    // Character name
-    ui.fillStyle = c === brCharSelected ? "white" : "rgb(150, 150, 150)";
+    // Character portrait
+    var pic = brCharPics[c];
+    if (pic) {
+      var imgW = 140;
+      var imgH = 100;
+      ui.drawImage(pic, bx + (boxW - imgW) / 2, boxY + 10, imgW, imgH);
+    }
+
+    // Character name below portrait
+    ui.fillStyle = c === brCharSelected ? "white" : "rgb(140, 140, 140)";
     ui.font = c === brCharSelected ? "900 18px Arial" : "700 16px Arial";
-    ui.fillText(brCharNames[c], bx + boxW / 2, boxY + boxH / 2 + 6);
+    ui.fillText(brCharNames[c], bx + boxW / 2, boxY + boxH - 12);
   }
 
-  // Render P1's character model in center
-  if (player[0]) {
-    // Player preview is handled by the normal action state rendering
-  }
-
-  // Large centered panel for selected character
-  ui.fillStyle = "rgb(35, 35, 55)";
+  // Large preview panel below
+  ui.fillStyle = "rgb(25, 25, 45)";
   ui.strokeStyle = "rgb(255, 215, 0)";
   ui.lineWidth = 3;
-  ui.fillRect(400, 400, 400, 250);
-  ui.strokeRect(400, 400, 400, 250);
+  ui.fillRect(350, 380, 500, 280);
+  ui.strokeRect(350, 380, 500, 280);
 
+  // Large portrait
+  var selPic = brCharPics[brCharSelected];
+  if (selPic) {
+    ui.drawImage(selPic, 420, 400, 360, 200);
+  }
+
+  // Character name
   ui.fillStyle = "white";
-  ui.font = "900 40px Arial";
-  ui.fillText(brCharNames[brCharSelected], 600, 500);
-
-  ui.font = "700 20px Arial";
-  ui.fillStyle = "rgb(180, 180, 180)";
-  ui.fillText("P1", 600, 540);
+  ui.font = "900 45px Arial";
+  ui.strokeStyle = "black";
+  ui.lineWidth = 3;
+  ui.strokeText(brCharNames[brCharSelected], 600, 640);
+  ui.fillText(brCharNames[brCharSelected], 600, 640);
 
   // Instructions
-  ui.font = "700 22px Arial";
+  ui.font = "700 24px Arial";
+  ui.lineWidth = 1;
   ui.fillStyle = brCharConfirmed ? "rgb(100, 255, 100)" : "rgb(255, 215, 0)";
-  ui.fillText(brCharConfirmed ? "STARTING..." : "A to Start  |  B to Back", 600, 700);
+  ui.fillText(brCharConfirmed ? "STARTING..." : "A to Start  |  B to Back", 600, 710);
 
   ui.restore();
 }

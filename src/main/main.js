@@ -850,6 +850,10 @@ export function positionPlayersInCSS (){
   for (var i=0;i<ports;i++){
       if (playerType[i] > -1 && player[i]) {
         var x = (-80+(i%4)*50)*2/3;
+        // Center player in panel for BR mode
+        if (battleRoyalePending) {
+          x = 0;
+        }
         var y = -30;
         player[i].phys.pos = new Vec2D(x,y);
         player[i].phys.hurtbox = new Box2D([-4+x,18+y],[4+x,y]);
@@ -1306,24 +1310,18 @@ export function gameTick (oldInputBuffers){
       menuMove(i, input);
     }
   }else if (gameMode == 2) {
-    if (battleRoyalePending) {
-      // BR character select — only P1 picks
-      input[0] = interpretInputs(0, true, playerType[0], oldInputBuffers[0]);
-      brCSSControls(0, input);
-    } else {
-      // Normal CSS: handles first 4 human-controlled players
-      var cssMax = Math.min(ports, 4);
-      for (var i = 0; i < cssMax; i++) {
-        if (playerType[i] > -1 && player[i]) {
-          input[i] = interpretInputs(i, true, playerType[i],oldInputBuffers[i]);
-          cssControls(i, input);
-          actionStates[characterSelections[i]][player[i].actionState].main(i,input);
-        }
+    // CSS: handles first 4 human-controlled players (or just P1 in BR mode)
+    var cssMax = Math.min(ports, 4);
+    for (var i = 0; i < cssMax; i++) {
+      if (playerType[i] > -1 && player[i]) {
+        input[i] = interpretInputs(i, true, playerType[i],oldInputBuffers[i]);
+        cssControls(i, input);
+        actionStates[characterSelections[i]][player[i].actionState].main(i,input);
       }
-      for (var i = 0; i < cssMax; i++) {
-        if (playerType[i] > -1) {
-          hitDetect(i,input);
-        }
+    }
+    for (var i = 0; i < cssMax; i++) {
+      if (playerType[i] > -1) {
+        hitDetect(i,input);
       }
     }
     executeHits(input);
@@ -1561,11 +1559,7 @@ export function renderTick (){
     } else if (gameMode == 1) {
       drawMainMenu();
     } else if (gameMode == 2) {
-      if (battleRoyalePending) {
-        drawBRCSS();
-      } else {
-        drawCSS();
-      }
+      drawCSS();
       //renderVfx();
     } else if (gameMode == 6) {
       drawSSS();
@@ -1858,6 +1852,7 @@ function checkBattleRoyaleWinner(input) {
     // Already found winner, count down to end
     brVictoryTimer++;
     if (brVictoryTimer > 300) { // 5 seconds at 60fps
+      wasInBattleRoyale = true;
       battleRoyaleMode = false;
       finishGame(input);
     }
@@ -2110,8 +2105,11 @@ export function startGame (){
   }
 }
 
+export let wasInBattleRoyale = false;
+
 export function endGame (input){
   disableCamera();
+  wasInBattleRoyale = battleRoyaleMode || wasInBattleRoyale;
   battleRoyaleMode = false;
   battleRoyaleWinner = -1;
   // Restore original blastzone
@@ -2135,7 +2133,26 @@ export function endGame (input){
   setTokenPosSnapToChar(1);
   setTokenPosSnapToChar(2);
   setTokenPosSnapToChar(3);
-  if (gameMode == 3) {
+  if (gameMode == 3 && wasInBattleRoyale) {
+    // Clean up AI players from previous BR match
+    for (var ci = ports - 1; ci >= 1; ci--) {
+      if (playerType[ci] === 1) {
+        playerType[ci] = -1;
+      }
+    }
+    // Reset ports to just human players
+    var humanCount = 0;
+    for (var hi = 0; hi < ports; hi++) {
+      if (playerType[hi] === 0 || playerType[hi] === 2) humanCount++;
+    }
+    ports = Math.max(humanCount, 1);
+    // Return to BR character select
+    battleRoyalePending = true;
+    wasInBattleRoyale = false;
+    brCSSInit();
+    changeGamemode(2);
+    MusicManager.playMenuLoop();
+  } else if (gameMode == 3) {
     changeGamemode(2);
     MusicManager.playMenuLoop();
   } else if (gameMode == 5) {
