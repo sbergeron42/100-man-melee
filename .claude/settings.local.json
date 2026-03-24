@@ -20,7 +20,11 @@
       "Bash(cmd.exe /c \"where gh\" 2>/dev/null)",
       "Bash(curl:*)",
       "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(t[''''path'''']\\) for t in data.get\\(''''tree'''',[]\\)]\")",
-      "WebFetch(domain:smashboards.com)"
+      "WebFetch(domain:smashboards.com)",
+      "Bash(timeout 3 node server/relay.js 8080)",
+      "Bash(timeout 3 node server/relay.js 8765)",
+      "Bash(timeout 3 node server/relay.js 3001)",
+      "Bash(node server/relay.js 3001)"
     ]
   }
 }

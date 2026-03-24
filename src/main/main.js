@@ -48,6 +48,8 @@ import {deepCopy} from "./util/deepCopy";
 import {deepObjectMerge} from "./util/deepCopyObject";
 import {setTokenPosSnapToChar} from "../menus/css";
 import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera} from "./camera";
+import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, onGameStart as netOnGameStart, onGameOver as netOnGameOver, onKillFeed as netOnKillFeed, onWelcome as netOnWelcome, getRoomPlayerCount, getRemoteCharacter} from "./multiplayer/netclient";
+import * as netclient from "./multiplayer/netclient";
 /*globals performance*/
 
 export const holiday = 0;
@@ -1219,6 +1221,11 @@ export function renderToMain (){
 }
 
 export function update (i,inputBuffers){
+  // Remote puppet: skip physics entirely, apply network state
+  if (playerType[i] === 3) {
+    updateRemotePlayer(i);
+    return;
+  }
   if (!starting){
     if (currentPlayers[i] != -1){
       if (playerType[i] == 0){
@@ -1232,6 +1239,22 @@ export function update (i,inputBuffers){
     }
   }
   physics(i, inputBuffers);
+}
+
+function updateRemotePlayer(i) {
+  var state = getInterpolatedState(i);
+  if (!state || !player[i]) return;
+  player[i].phys.pos.x = state.x;
+  player[i].phys.pos.y = state.y;
+  player[i].actionState = state.actionState;
+  player[i].timer = state.timer;
+  player[i].phys.face = state.face;
+  player[i].percent = state.percent;
+  player[i].stocks = state.stocks;
+  player[i].phys.cVel.x = state.velX;
+  player[i].phys.cVel.y = state.velY;
+  player[i].phys.grounded = state.grounded;
+  player[i].phys.shielding = state.shielding;
 }
 
 let delta = 0;
@@ -1422,17 +1445,23 @@ export function gameTick (oldInputBuffers){
     for (var i = 0; i < ports; i++) {
       if (playerType[i] > -1) {
         setCurrentSfxPlayer(i);
-        if(!starting) {
-          input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
+        if (playerType[i] !== 3) { // skip input/physics for remote puppets
+          if(!starting) {
+            input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
+          }
         }
         update(i,input);
       }
+    }
+    // Send local player state to server
+    if (networkMode && isConnected()) {
+      sendPlayerState(0);
     }
     setCurrentSfxPlayer(-1);
     checkPhantoms();
     rebuildSpatialGrid();
     for (var i = 0; i < ports; i++) {
-      if (playerType[i] > -1) {
+      if (playerType[i] > -1 && playerType[i] !== 3) { // skip hit detection for remote puppets
         setCurrentSfxPlayer(i);
         hitDetect(i,input);
       }
@@ -1792,6 +1821,72 @@ export function spawnAIPlayers(count) {
 // Expose to browser console for testing
 window.spawnAIPlayers = spawnAIPlayers;
 
+// --- Network Mode ---
+export let networkMode = false;
+export let networkServerUrl = "ws://localhost:3001";
+
+export function startOnlineBattleRoyale(serverUrl) {
+  networkServerUrl = serverUrl || networkServerUrl;
+  networkMode = true;
+  battleRoyalePending = true;
+
+  // Set up network callbacks
+  netclient.onGameStart = function(playerList) {
+    console.log("Network game starting with " + playerList.length + " players");
+    // Create remote player objects
+    for (var i = 0; i < playerList.length; i++) {
+      var pid = playerList[i].id;
+      if (pid === getLocalPlayerId()) continue;
+      ensurePlayerSlot(pid);
+      ensureAIInputSlot(pid);
+      characterSelections[pid] = playerList[i].character;
+      playerType[pid] = 3; // remote puppet
+      currentPlayers[pid] = pid;
+      mType[pid] = null;
+      pPal[pid] = pid % palettes.length;
+      if (pid >= ports) ports = pid + 1;
+    }
+    // Build all remote player objects
+    for (var j = 0; j < playerList.length; j++) {
+      var pid2 = playerList[j].id;
+      if (pid2 === getLocalPlayerId()) continue;
+      buildPlayerObject(pid2);
+      player[pid2].phys.face = 1;
+      player[pid2].actionState = "WAIT";
+      player[pid2].timer = 0;
+      player[pid2].stocks = 1;
+    }
+    // Set local player to 1 stock
+    if (player[0]) player[0].stocks = 1;
+
+    stageSelect = 6;
+    startGame();
+
+    // Override stocks after startGame rebuilds
+    for (var k = 0; k < ports; k++) {
+      if (player[k]) player[k].stocks = 1;
+    }
+  };
+
+  netclient.onGameOver = function(winnerId) {
+    battleRoyaleWinner = winnerId === getLocalPlayerId() ? 0 : winnerId;
+    brVictoryTimer = 0;
+  };
+
+  netclient.onKillFeed = function(victimId, killerId, alive) {
+    addKillFeedEntry(victimId, killerId);
+  };
+
+  // Connect to server
+  connectToServer(networkServerUrl);
+
+  // Go to BR character select
+  brCSSInit();
+  changeGamemode(2);
+}
+
+window.startOnlineBR = startOnlineBattleRoyale;
+
 // --- Battle Royale Mode ---
 export let battleRoyaleMode = false;
 export let battleRoyaleWinner = -1;
@@ -1886,6 +1981,10 @@ function checkBattleRoyaleWinner(input) {
 
 export function addKillFeedEntry(victim, attacker) {
   if (!battleRoyaleMode) return;
+  // Send death to server if we're the victim in network mode
+  if (networkMode && isConnected() && victim === 0) {
+    sendPlayerDied(attacker >= 0 ? attacker : 255);
+  }
   if (attacker >= 0 && attacker < battleRoyaleKills.length) {
     battleRoyaleKills[attacker]++;
   }

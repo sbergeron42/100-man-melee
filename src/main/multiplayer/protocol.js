@@ -1,5 +1,5 @@
+/* eslint-disable */
 // Protocol constants for 100-Man Melee networking
-// CommonJS module (used by server + bot script)
 
 var OPCODES = {
   JOIN:          0x01, // C->S: join room
