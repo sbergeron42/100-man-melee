@@ -15,16 +15,18 @@ var aliveCount = 0;
 var remoteStates = {};      // id -> {current, previous, timestamp}
 var remoteCharacters = {};  // id -> charId
 
-// Callbacks
-export var onWelcome = null;      // function(playerId, playerCount, isHost)
-export var onPlayerJoined = null; // function(playerId, playerCount)
-export var onPlayerLeft = null;   // function(playerId, playerCount)
-export var onCharUpdate = null;   // function(playerId, charId)
-export var onGameStart = null;    // function(playerList: [{id, character}])
-export var onWorldState = null;   // function(states, aliveCount)
-export var onKillFeed = null;     // function(victimId, killerId, aliveCount)
-export var onGameOver = null;     // function(winnerId)
-export var lobbyCountdown = 0;    // seconds until auto-start
+// Callbacks — use object so external code can set them
+export var callbacks = {
+  onWelcome: null,
+  onPlayerJoined: null,
+  onPlayerLeft: null,
+  onCharUpdate: null,
+  onGameStart: null,
+  onWorldState: null,
+  onKillFeed: null,
+  onGameOver: null,
+};
+export var lobbyCountdown = 0;
 
 export function connectToServer(url) {
   if (ws) ws.close();
@@ -159,13 +161,13 @@ function handleMessage(buf) {
       gamePhase = buf[3];
       isHost = buf[4] === 1;
       console.log('Welcome! Player ID: ' + localPlayerId + ', Host: ' + isHost + ', Players: ' + roomPlayerCount);
-      if (onWelcome) onWelcome(localPlayerId, roomPlayerCount, isHost);
+      if (callbacks.onWelcome) callbacks.onWelcome(localPlayerId, roomPlayerCount, isHost);
       break;
 
     case OP.PLAYER_JOINED:
       roomPlayerCount = buf[2];
       console.log('Player ' + buf[1] + ' joined. Total: ' + roomPlayerCount);
-      if (onPlayerJoined) onPlayerJoined(buf[1], roomPlayerCount);
+      if (callbacks.onPlayerJoined) callbacks.onPlayerJoined(buf[1], roomPlayerCount);
       break;
 
     case OP.PLAYER_LEFT:
@@ -174,7 +176,7 @@ function handleMessage(buf) {
       delete remoteStates[leftId];
       delete remoteCharacters[leftId];
       console.log('Player ' + leftId + ' left. Total: ' + roomPlayerCount);
-      if (onPlayerLeft) onPlayerLeft(leftId, roomPlayerCount);
+      if (callbacks.onPlayerLeft) callbacks.onPlayerLeft(leftId, roomPlayerCount);
       break;
 
     case OP.CHAR_UPDATE:
@@ -185,7 +187,7 @@ function handleMessage(buf) {
         break;
       }
       remoteCharacters[buf[1]] = buf[2];
-      if (onCharUpdate) onCharUpdate(buf[1], buf[2]);
+      if (callbacks.onCharUpdate) callbacks.onCharUpdate(buf[1], buf[2]);
       break;
 
     case OP.GAME_START:
@@ -199,7 +201,7 @@ function handleMessage(buf) {
         remoteCharacters[pid] = charId;
       }
       console.log('Game starting with ' + playerCount + ' players');
-      if (onGameStart) onGameStart(playerList);
+      if (callbacks.onGameStart) callbacks.onGameStart(playerList);
       break;
 
     case OP.WORLD_STATE:
@@ -227,24 +229,27 @@ function handleMessage(buf) {
         }
       }
 
-      if (onWorldState) onWorldState(remoteStates, aliveCount);
+      if (callbacks.onWorldState) callbacks.onWorldState(remoteStates, aliveCount);
       break;
 
     case OP.KILL_FEED:
       aliveCount = buf[3];
-      if (onKillFeed) onKillFeed(buf[1], buf[2], aliveCount);
+      if (callbacks.onKillFeed) callbacks.onKillFeed(buf[1], buf[2], aliveCount);
       break;
 
     case OP.GAME_OVER:
       gamePhase = PHASES.GAMEOVER;
       console.log('Game Over! Winner: Player ' + buf[1]);
-      if (onGameOver) onGameOver(buf[1]);
+      if (callbacks.onGameOver) callbacks.onGameOver(buf[1]);
       break;
 
     default:
       break;
   }
 }
+
+// Local animation timers for smooth playback between network updates
+var localTimers = {}; // serverId -> {timer, actionState, lastNetTimer}
 
 // Get interpolated state for a remote player
 export function getInterpolatedState(id) {
@@ -253,17 +258,46 @@ export function getInterpolatedState(id) {
 
   var now = Date.now();
   var dt = rs.timestamp - rs.prevTimestamp;
-  if (dt <= 0) return rs.current;
-
-  var alpha = Math.min((now - rs.timestamp) / dt, 1.5); // clamp to avoid overshooting
   var cur = rs.current;
   var prev = rs.previous;
 
+  // Position interpolation: smooth between prev and current, allow extrapolation
+  var alpha = 1;
+  if (dt > 0) {
+    alpha = Math.min((now - rs.prevTimestamp) / dt, 2.0);
+  }
+  var ix = prev.x + (cur.x - prev.x) * alpha;
+  var iy = prev.y + (cur.y - prev.y) * alpha;
+
+  // Animation: advance timer locally at ~1 per frame (60fps = +1/frame)
+  // Reset when action state changes from network
+  if (!localTimers[id]) {
+    localTimers[id] = {timer: cur.timer, actionState: cur.actionState, lastNetTimer: cur.timer};
+  }
+  var lt = localTimers[id];
+  if (lt.actionState !== cur.actionState) {
+    // Action state changed — snap to network timer
+    lt.actionState = cur.actionState;
+    lt.timer = cur.timer;
+    lt.lastNetTimer = cur.timer;
+  } else {
+    // Same action state — advance locally, nudge toward network value
+    lt.timer += 1;
+    // Gently correct toward network timer to prevent drift
+    var timerDiff = cur.timer - lt.timer;
+    if (Math.abs(timerDiff) > 5) {
+      lt.timer = cur.timer; // snap if too far off
+    } else {
+      lt.timer += timerDiff * 0.1; // gentle nudge
+    }
+    lt.lastNetTimer = cur.timer;
+  }
+
   return {
-    x: prev.x + (cur.x - prev.x) * alpha,
-    y: prev.y + (cur.y - prev.y) * alpha,
+    x: ix,
+    y: iy,
     actionState: cur.actionState,
-    timer: cur.timer,
+    timer: Math.max(1, lt.timer),
     face: cur.face,
     percent: cur.percent,
     stocks: cur.stocks,

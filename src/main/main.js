@@ -48,8 +48,7 @@ import {deepCopy} from "./util/deepCopy";
 import {deepObjectMerge} from "./util/deepCopyObject";
 import {setTokenPosSnapToChar} from "../menus/css";
 import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera} from "./camera";
-import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, onGameStart as netOnGameStart, onGameOver as netOnGameOver, onKillFeed as netOnKillFeed, onWelcome as netOnWelcome, getRoomPlayerCount, getRemoteCharacter} from "./multiplayer/netclient";
-import * as netclient from "./multiplayer/netclient";
+import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, getRoomPlayerCount, getRemoteCharacter, callbacks as netCallbacks} from "./multiplayer/netclient";
 /*globals performance*/
 
 export const holiday = 0;
@@ -1242,7 +1241,13 @@ export function update (i,inputBuffers){
 }
 
 function updateRemotePlayer(i) {
-  var state = getInterpolatedState(i);
+  // Find the server ID that maps to this game index
+  var serverId = -1;
+  for (var sid in serverIdToGameIndex) {
+    if (serverIdToGameIndex[sid] === i) { serverId = parseInt(sid); break; }
+  }
+  if (serverId < 0) return;
+  var state = getInterpolatedState(serverId);
   if (!state || !player[i]) return;
   player[i].phys.pos.x = state.x;
   player[i].phys.pos.y = state.y;
@@ -1824,6 +1829,7 @@ window.spawnAIPlayers = spawnAIPlayers;
 // --- Network Mode ---
 export let networkMode = false;
 export let networkServerUrl = "ws://localhost:3001";
+var serverIdToGameIndex = {}; // maps server player IDs to local game indices
 
 export function startOnlineBattleRoyale(serverUrl) {
   networkServerUrl = serverUrl || networkServerUrl;
@@ -1831,49 +1837,67 @@ export function startOnlineBattleRoyale(serverUrl) {
   battleRoyalePending = true;
 
   // Set up network callbacks
-  netclient.onGameStart = function(playerList) {
+  netCallbacks.onGameStart = function(playerList) {
     console.log("Network game starting with " + playerList.length + " players");
-    // Create remote player objects
-    for (var i = 0; i < playerList.length; i++) {
-      var pid = playerList[i].id;
-      if (pid === getLocalPlayerId()) continue;
-      ensurePlayerSlot(pid);
-      ensureAIInputSlot(pid);
-      characterSelections[pid] = playerList[i].character;
-      playerType[pid] = 3; // remote puppet
-      currentPlayers[pid] = pid;
-      mType[pid] = null;
-      pPal[pid] = pid % palettes.length;
-      if (pid >= ports) ports = pid + 1;
-    }
-    // Build all remote player objects
-    for (var j = 0; j < playerList.length; j++) {
-      var pid2 = playerList[j].id;
-      if (pid2 === getLocalPlayerId()) continue;
-      buildPlayerObject(pid2);
-      player[pid2].phys.face = 1;
-      player[pid2].actionState = "WAIT";
-      player[pid2].timer = 0;
-      player[pid2].stocks = 1;
-    }
-    // Set local player to 1 stock
-    if (player[0]) player[0].stocks = 1;
+    try {
+      // Map server IDs to local game indices
+      // Local player is always game index 0
+      // Remote players get indices 1, 2, 3, ...
+      var localServerId = getLocalPlayerId();
+      var remoteIndex = 1;
 
-    stageSelect = 6;
-    startGame();
+      for (var i = 0; i < playerList.length; i++) {
+        var serverId = playerList[i].id;
+        if (serverId === localServerId) {
+          // This is us — set our character
+          characterSelections[0] = playerList[i].character;
+          continue;
+        }
+        // Remote player
+        var gi = remoteIndex++;
+        ensurePlayerSlot(gi);
+        ensureAIInputSlot(gi);
+        characterSelections[gi] = playerList[i].character;
+        playerType[gi] = 3; // remote puppet
+        currentPlayers[gi] = gi;
+        mType[gi] = null;
+        pPal[gi] = gi % palettes.length;
+        if (gi >= ports) ports = gi + 1;
 
-    // Override stocks after startGame rebuilds
-    for (var k = 0; k < ports; k++) {
-      if (player[k]) player[k].stocks = 1;
+        // Store mapping: server ID -> game index for state updates
+        serverIdToGameIndex[serverId] = gi;
+      }
+
+      // Build all remote player objects
+      for (var gi2 = 1; gi2 < ports; gi2++) {
+        if (playerType[gi2] === 3) {
+          buildPlayerObject(gi2);
+          player[gi2].phys.face = 1;
+          player[gi2].actionState = "WAIT";
+          player[gi2].timer = 0;
+          player[gi2].stocks = 1;
+        }
+      }
+
+      stageSelect = 6;
+      startGame();
+
+      // Override stocks after startGame rebuilds
+      for (var k = 0; k < ports; k++) {
+        if (player[k]) player[k].stocks = 1;
+      }
+      console.log("Network game started successfully. Local=0, Remotes=" + (ports - 1));
+    } catch(e) {
+      console.error("Error in onGameStart:", e);
     }
   };
 
-  netclient.onGameOver = function(winnerId) {
+  netCallbacks.onGameOver = function(winnerId) {
     battleRoyaleWinner = winnerId === getLocalPlayerId() ? 0 : winnerId;
     brVictoryTimer = 0;
   };
 
-  netclient.onKillFeed = function(victimId, killerId, alive) {
+  netCallbacks.onKillFeed = function(victimId, killerId, alive) {
     addKillFeedEntry(victimId, killerId);
   };
 
@@ -1911,10 +1935,12 @@ export function initBattleRoyale() {
   battleRoyaleKills = [];
   killFeed = [];
 
-  // Spawn AI to fill up to 100
-  var aiToSpawn = MAX_PLAYERS - ports;
-  if (aiToSpawn > 0) {
-    spawnAIPlayers(aiToSpawn);
+  // Spawn AI to fill up to 100 (only in local/solo mode, not network)
+  if (!networkMode) {
+    var aiToSpawn = MAX_PLAYERS - ports;
+    if (aiToSpawn > 0) {
+      spawnAIPlayers(aiToSpawn);
+    }
   }
 
   // Init kill tracking

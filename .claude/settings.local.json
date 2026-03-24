@@ -24,7 +24,9 @@
       "Bash(timeout 3 node server/relay.js 8080)",
       "Bash(timeout 3 node server/relay.js 8765)",
       "Bash(timeout 3 node server/relay.js 3001)",
-      "Bash(node server/relay.js 3001)"
+      "Bash(node server/relay.js 3001)",
+      "Bash(npx kill-port:*)",
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq *relay*\")"
     ]
   }
 }
