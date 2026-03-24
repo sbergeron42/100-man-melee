@@ -709,14 +709,14 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
 
   // For remote players: apply knockback velocity immediately and set visual override timer
   if (playerType[v] === 3) {
-    var kb = player[v].hit.knockback;
-    var angle = getLaunchAngle(player[v].hit.angle, kb, player[v].phys.grounded);
-    player[v].phys.kVel.x = getHorizontalVelocity(kb, angle);
-    player[v].phys.kVel.y = getVerticalVelocity(kb, angle, player[v].phys.grounded, player[v].hit.angle);
+    var rkb = player[v].hit.knockback;
+    var rangle = getLaunchAngle(player[v].hit.angle, rkb, false, 0, 0, v);
+    player[v].phys.kVel.x = getHorizontalVelocity(rkb, rangle);
+    player[v].phys.kVel.y = getVerticalVelocity(rkb, rangle, player[v].phys.grounded, player[v].hit.angle);
     player[v].phys.cVel.x = 0;
     player[v].phys.cVel.y = 0;
     // Let the knockback visual play for hitstun frames
-    var hitstunFrames = getHitstun(kb);
+    var hitstunFrames = getHitstun(rkb);
     setRemoteHitTimer(v, Math.min(hitstunFrames, 40)); // cap at 40 frames
   }
 }
