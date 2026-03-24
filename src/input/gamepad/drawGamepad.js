@@ -124,10 +124,10 @@ export function updateGamepadSVGState(i : number, id : string, maybeInput : ?Inp
 
   const svgObject = document.getElementById(id);
   if (svgObject === null || svgObject === undefined) {
-    console.log("error in 'updateGamepadSVGState': gamepad SVG not found.");
     return void 0;
   }
   const svg = svgObject.contentDocument;
+  if (!svg || !svg.getElementById("ZPressed")) return;
 
   if (gamepadStates[i].z === false && input.z) {
     gamepadStates[i].z = true;

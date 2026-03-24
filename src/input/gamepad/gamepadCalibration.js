@@ -56,11 +56,15 @@ const ids = ["a", "b", "x", "y", "s", "r", "l", "z", "dpad", "icon", "ls", "cs"]
 // these turn off when the SVG is not displayed, so shouldn't impact performance
 function listen(): void {
   // $FlowFixMe ignore the following type error
-  const svgDoc = document.getElementById("gamepadSVGCalibration").contentDocument;
+  const svgEl = document.getElementById("gamepadSVGCalibration");
+  if (!svgEl || !svgEl.contentDocument) return;
+  const svgDoc = svgEl.contentDocument;
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
+    const el = svgDoc.getElementById(id);
+    if (!el) continue;
     // eslint-disable-next-line no-loop-func
-    svgDoc.getElementById(id).addEventListener('click', () => {
+    el.addEventListener('click', () => {
       clickObject = id;
     });
   }

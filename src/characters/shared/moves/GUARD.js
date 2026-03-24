@@ -57,7 +57,10 @@ export default {
         actionStates[characterSelections[p]].ESCAPEB.init(p,input);
         return true;
       }
-      else if (input[p][0].lsY < -0.65 && input[p][6].lsY > -0.3 && player[p].phys.onSurface[0] === 1){
+      // UCF Shield Drop Fix: widened input zone and shorter history window
+      // Original: lsY < -0.65 with 6-frame history
+      // UCF: lsY < -0.56 with 4-frame history (more forgiving)
+      else if (input[p][0].lsY < -0.56 && input[p][4].lsY > -0.3 && player[p].phys.onSurface[0] === 1){
         player[p].phys.shielding = false;
         actionStates[characterSelections[p]].PASS.init(p,input);
         return true;
