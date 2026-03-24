@@ -1,4 +1,4 @@
-import {characterSelections, player, gameMode, versusMode, playerType} from "main/main";
+import {characterSelections, player, gameMode, versusMode, playerType, ports, battleRoyaleMode} from "main/main";
 import FOXMOVES from "characters/fox/moves/index";
 import PUFFMOVES from "characters/puff/moves/index";
 import MARTHMOVES from "characters/marth/moves/index";
@@ -154,10 +154,13 @@ export function isFinalDeath (){
     return true;
   } else if (versusMode) {
     return false;
+  } else if (battleRoyaleMode) {
+    // BR mode: never trigger finishGame from here — winner detection handles it
+    return false;
   } else {
     let finalDeaths = 0;
     let totalPlayers = 0;
-    for (let j = 0; j < 4; j++) {
+    for (let j = 0; j < ports; j++) {
       if (playerType[j] > -1) {
         totalPlayers++;
         if (player[j].stocks == 0) {

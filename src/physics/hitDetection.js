@@ -658,6 +658,10 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
   }
 
   player[v].percent += damage;
+  // Track last attacker for kill attribution
+  if (!stageDamage && a >= 0) {
+    player[v].phys.lastHitBy = a;
+  }
 
   // if victim is grabbing someone, put the victim's grab victim into a grab release
   if (player[v].phys.grabbing > -1) {

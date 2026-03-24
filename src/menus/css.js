@@ -26,6 +26,12 @@ import {
   ports
   ,
   setVersusMode
+  ,
+  battleRoyalePending
+  ,
+  startGame
+  ,
+  setStageSelect
 } from "main/main";
 import {drawArrayPathCompress, twoPi} from "main/render";
 import {sounds} from "main/sfx";
@@ -1261,3 +1267,124 @@ export function drawCSS() {
 
 
 }
+
+// --- Battle Royale Character Select ---
+// Must match CHARIDS order: 0=Marth, 1=Puff, 2=Fox, 3=Falco, 4=Falcon
+var brCharNames = ["MARTH", "JIGGLYPUFF", "FOX", "FALCO", "C.FALCON"];
+var brCharSelected = 0;
+var brCharConfirmed = false;
+
+export function brCSSInit() {
+  brCharSelected = characterSelections[0] || 0;
+  brCharConfirmed = false;
+}
+
+export function brCSSControls(i, input) {
+  if (i !== 0) return;
+  if (brCharConfirmed) return;
+
+  // Left/right to cycle characters
+  if (input[i][0].lsX > 0.7 && !(input[i][1].lsX > 0.7)) {
+    brCharSelected++;
+    if (brCharSelected >= brCharNames.length) brCharSelected = 0;
+    sounds.menuSelect.play();
+  } else if (input[i][0].lsX < -0.7 && !(input[i][1].lsX < -0.7)) {
+    brCharSelected--;
+    if (brCharSelected < 0) brCharSelected = brCharNames.length - 1;
+    sounds.menuSelect.play();
+  }
+
+  characterSelections[0] = brCharSelected;
+
+  // A to confirm and start
+  if (input[i][0].a && !input[i][1].a) {
+    brCharConfirmed = true;
+    sounds.menuForward.play();
+    characterSelections[0] = brCharSelected;
+    // Skip stage select — go straight to game
+    setStageSelect(6);
+    startGame();
+  }
+
+  // B to go back
+  if (input[i][0].b && !input[i][1].b) {
+    sounds.menuBack.play();
+    changeGamemode(1);
+  }
+}
+
+export function drawBRCSS() {
+  clearScreen();
+
+  // Background
+  bg1.fillStyle = "rgb(20, 20, 35)";
+  bg1.fillRect(0, 0, 1200, 750);
+
+  // Title
+  ui.save();
+  ui.textAlign = "center";
+  ui.font = "900 60px Arial";
+  ui.fillStyle = "rgb(255, 50, 50)";
+  ui.strokeStyle = "black";
+  ui.lineWidth = 4;
+  ui.strokeText("100-MAN MELEE", 600, 80);
+  ui.fillText("100-MAN MELEE", 600, 80);
+
+  ui.font = "700 30px Arial";
+  ui.fillStyle = "rgb(200, 200, 200)";
+  ui.fillText("SELECT YOUR FIGHTER", 600, 130);
+
+  // Character boxes
+  var boxW = 160;
+  var boxH = 120;
+  var totalW = brCharNames.length * boxW + (brCharNames.length - 1) * 20;
+  var startX = (1200 - totalW) / 2;
+  var boxY = 250;
+
+  for (var c = 0; c < brCharNames.length; c++) {
+    var bx = startX + c * (boxW + 20);
+
+    // Box background
+    if (c === brCharSelected) {
+      ui.fillStyle = "rgb(255, 215, 0)";
+      ui.fillRect(bx - 4, boxY - 4, boxW + 8, boxH + 8);
+      ui.fillStyle = "rgb(60, 60, 90)";
+    } else {
+      ui.fillStyle = "rgb(40, 40, 60)";
+    }
+    ui.fillRect(bx, boxY, boxW, boxH);
+
+    // Character name
+    ui.fillStyle = c === brCharSelected ? "white" : "rgb(150, 150, 150)";
+    ui.font = c === brCharSelected ? "900 18px Arial" : "700 16px Arial";
+    ui.fillText(brCharNames[c], bx + boxW / 2, boxY + boxH / 2 + 6);
+  }
+
+  // Render P1's character model in center
+  if (player[0]) {
+    // Player preview is handled by the normal action state rendering
+  }
+
+  // Large centered panel for selected character
+  ui.fillStyle = "rgb(35, 35, 55)";
+  ui.strokeStyle = "rgb(255, 215, 0)";
+  ui.lineWidth = 3;
+  ui.fillRect(400, 400, 400, 250);
+  ui.strokeRect(400, 400, 400, 250);
+
+  ui.fillStyle = "white";
+  ui.font = "900 40px Arial";
+  ui.fillText(brCharNames[brCharSelected], 600, 500);
+
+  ui.font = "700 20px Arial";
+  ui.fillStyle = "rgb(180, 180, 180)";
+  ui.fillText("P1", 600, 540);
+
+  // Instructions
+  ui.font = "700 22px Arial";
+  ui.fillStyle = brCharConfirmed ? "rgb(100, 255, 100)" : "rgb(255, 215, 0)";
+  ui.fillText(brCharConfirmed ? "STARTING..." : "A to Start  |  B to Back", 600, 700);
+
+  ui.restore();
+}
+// --- End BR CSS ---

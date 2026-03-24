@@ -9,7 +9,8 @@ import {
   versusMode,
   showDebug,
   gameMode,
-  ports
+  ports,
+  addKillFeedEntry
 } from "../main/main";
 import {framesData, ecb} from "../main/characters";
 import {sounds} from "../main/sfx";
@@ -997,6 +998,10 @@ function dealWithDeath(i: number, input: any): void {
       player[i].stocks--;
       player[i].colourOverlayBool = false;
       lostStockQueue.push([i, player[i].stocks, 0]);
+      // Track elimination for battle royale kill feed
+      if (player[i].stocks <= 0) {
+        addKillFeedEntry(i, player[i].phys.lastHitBy !== undefined ? player[i].phys.lastHitBy : -1);
+      }
       if (player[i].stocks === 0 && versusMode) {
         player[i].stocks = 1;
       }

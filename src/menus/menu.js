@@ -1,5 +1,5 @@
 import {bg1,fg1,fg2,bg2, player, changeGamemode, positionPlayersInCSS, setKeyBinding, ports, layers,ui, clearScreen,
-    setCreditsPlayer, setCalibrationPlayer, currentPlayers
+    setCreditsPlayer, setCalibrationPlayer, currentPlayers, startBattleRoyale
 } from "main/main";
 import {sounds} from "main/sfx";
 import {setTargetPlayer} from "target/targetplay";
@@ -17,21 +17,21 @@ import {runCalibration} from "../input/gamepad/gamepadCalibration";
 let menuSelected = 0;
 
 const menuText = [
-  ["VS. Melee", "Target Test", "Target Builder", "Options"],
+  ["100-Man Melee", "VS. Melee", "Target Test", "Target Builder", "Options"],
   ["Audio", "Gameplay", "Keyboard Controls", "Credits"],
   ["Local VS", "Spectate", "P2P", "Server"],
   ["Controller", "Keyboard"]
 ];
 const menuExplanation = [
-  ["Multiplayer Battles!", "Smash ten targets!", "Build target test stages!", "Game setup."],
+  ["100 Player Battle Royale!", "Multiplayer Battles!", "Smash ten targets!", "Build target test stages!", "Game setup."],
   ["Select audio levels.", "Change gameplay settings.", "Customize & calibrate controls.", "Who did this?"],
   ["One box this screen.", "Ranked Mode", "Hostless Muliplayer", "Hosted Multiplayer"],
   ["Customize & calibrate controller.", "Customize keyboard controls."]
 ];
-const menuCount = [4, 4, 4,2];
+const menuCount = [5, 4, 4,2];
 const menuTitle = ["Main Menu", "Options", "Battle Mode", "Controls"];
 let menuColourOffset = 0;
-const menuColours = [238, 358, 117, 55];
+const menuColours = [0, 238, 358, 117, 55];
 let menuCurColour = 238;
 //hsl(55, 100%, 50%)
 let menuCycle = 0;
@@ -46,10 +46,11 @@ const SECONDLEVELOPTIONS = 1;
 const MPMENU = 2;
 const CONTROLLERCALIB = 3;
 //top level
-const VSMODE = 0;
-const TARGETTEST = 1;
-const TARGETBUILDER = 2;
-const OPTIONS = 3;
+const BATTLEROYALE = 0;
+const VSMODE = 1;
+const TARGETTEST = 2;
+const TARGETBUILDER = 3;
+const OPTIONS = 4;
 //second level
 const AUDIOOPTIONS = 0;
 const GAMEPLAYOPTIONS = 1;
@@ -70,7 +71,10 @@ export function menuMove(i, input) {
     sounds.menuForward.play();
 
     if (menuMode == TOPLEVEL) {
-      if (menuSelected == VSMODE) {
+      if (menuSelected == BATTLEROYALE) {
+        startBattleRoyale();
+        return;
+      } else if (menuSelected == VSMODE) {
         menuSelected = LOCALVS;
         menuMode = MPMENU;
       } else {

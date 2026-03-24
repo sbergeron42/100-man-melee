@@ -1,5 +1,5 @@
 /* eslint-disable */
-import {choosingTag, drawCSSInit, cssControls, drawCSS} from 'menus/css';
+import {choosingTag, drawCSSInit, cssControls, drawCSS, brCSSInit, brCSSControls, drawBRCSS} from 'menus/css';
 import {playerObject} from 'main/player';
 import {keyMap} from 'settings';
 import {drawStartUp} from 'menus/startup';
@@ -379,7 +379,7 @@ export function matchTimerTick (input){
     dom.matchSeconds.innerHTML = sec.length < 5 ? `0${sec}` : sec;
   }
 
-  if (matchTimer <= 0) {
+  if (matchTimer <= 0 && !battleRoyaleMode) {
     finishGame(input);
   }
 }
@@ -1306,18 +1306,24 @@ export function gameTick (oldInputBuffers){
       menuMove(i, input);
     }
   }else if (gameMode == 2) {
-    // CSS only handles first 4 human-controlled players
-    var cssMax = Math.min(ports, 4);
-    for (var i = 0; i < cssMax; i++) {
-      if (playerType[i] > -1 && player[i]) {
-        input[i] = interpretInputs(i, true, playerType[i],oldInputBuffers[i]);
-        cssControls(i, input);
-        actionStates[characterSelections[i]][player[i].actionState].main(i,input);
+    if (battleRoyalePending) {
+      // BR character select — only P1 picks
+      input[0] = interpretInputs(0, true, playerType[0], oldInputBuffers[0]);
+      brCSSControls(0, input);
+    } else {
+      // Normal CSS: handles first 4 human-controlled players
+      var cssMax = Math.min(ports, 4);
+      for (var i = 0; i < cssMax; i++) {
+        if (playerType[i] > -1 && player[i]) {
+          input[i] = interpretInputs(i, true, playerType[i],oldInputBuffers[i]);
+          cssControls(i, input);
+          actionStates[characterSelections[i]][player[i].actionState].main(i,input);
+        }
       }
-    }
-    for (var i = 0; i < cssMax; i++) {
-      if (playerType[i] > -1) {
-        hitDetect(i,input);
+      for (var i = 0; i < cssMax; i++) {
+        if (playerType[i] > -1) {
+          hitDetect(i,input);
+        }
       }
     }
     executeHits(input);
@@ -1439,7 +1445,7 @@ export function gameTick (oldInputBuffers){
     executeArticleHits(input);
     if (!starting && !versusMode) {
       matchTimerTick(input);
-    } else {
+    } else if (starting) {
       startTimer -= 0.01666667;
       if (startTimer < 0) {
         starting = false;
@@ -1448,6 +1454,10 @@ export function gameTick (oldInputBuffers){
     // Blastzone shrink for battle royale
     if (!starting && ports > 4) {
       updateBlastzoneShrink();
+    }
+    // Battle royale winner detection
+    if (battleRoyaleMode && !starting && !gameEnd) {
+      checkBattleRoyaleWinner(input);
     }
     if (frameByFrame) {
       frameByFrameRender = true;
@@ -1551,7 +1561,11 @@ export function renderTick (){
     } else if (gameMode == 1) {
       drawMainMenu();
     } else if (gameMode == 2) {
-      drawCSS();
+      if (battleRoyalePending) {
+        drawBRCSS();
+      } else {
+        drawCSS();
+      }
       //renderVfx();
     } else if (gameMode == 6) {
       drawSSS();
@@ -1660,6 +1674,16 @@ export function renderTick (){
       // Render minimap
       if (cameraEnabled && ports > 4) {
         renderMinimap();
+      }
+
+      // Battle royale victory screen
+      if (battleRoyaleMode && battleRoyaleWinner >= 0) {
+        renderVictoryScreen();
+      }
+
+      // Battle royale HUD: kill feed + KO count
+      if (battleRoyaleMode && battleRoyaleWinner < 0) {
+        renderBattleRoyaleHUD();
       }
 
       // Performance display
@@ -1774,7 +1798,212 @@ export function spawnAIPlayers(count) {
 // Expose to browser console for testing
 window.spawnAIPlayers = spawnAIPlayers;
 
+// --- Battle Royale Mode ---
+export let battleRoyaleMode = false;
+export let battleRoyaleWinner = -1;
+export let battleRoyaleKills = [];
+export let killFeed = [];
+
+// Phase 1: Send P1 to CSS to pick character, flag BR mode as pending
+export let battleRoyalePending = false;
+
+export function startBattleRoyale() {
+  battleRoyalePending = true;
+  brCSSInit();
+  // Go to BR character select
+  changeGamemode(2);
+}
+
+// Phase 2: Called from startGame when BR is pending — spawns AI and sets up the match
+export function initBattleRoyale() {
+  battleRoyalePending = false;
+  battleRoyaleMode = true;
+  battleRoyaleWinner = -1;
+  battleRoyaleKills = [];
+  killFeed = [];
+
+  // Spawn AI to fill up to 100
+  var aiToSpawn = MAX_PLAYERS - ports;
+  if (aiToSpawn > 0) {
+    spawnAIPlayers(aiToSpawn);
+  }
+
+  // Init kill tracking
+  for (var k = 0; k < ports; k++) {
+    battleRoyaleKills[k] = 0;
+  }
+
+  // Force stage to Mega Battlefield
+  stageSelect = 6;
+}
+
+// Phase 3: Called after startGame finishes building player objects
+function finalizeBattleRoyale() {
+  // Set everyone to 1 stock
+  for (var j = 0; j < ports; j++) {
+    if (player[j]) {
+      player[j].stocks = 1;
+    }
+  }
+  console.log("100-Man Melee started! " + ports + " players, 1 stock each.");
+}
+
+window.startBattleRoyale = startBattleRoyale;
+
+var brVictoryTimer = 0;
+var charNames = ["Marth", "Jigglypuff", "Fox", "Falco", "C.Falcon"];
+
+function checkBattleRoyaleWinner(input) {
+  if (battleRoyaleWinner >= 0) {
+    // Already found winner, count down to end
+    brVictoryTimer++;
+    if (brVictoryTimer > 300) { // 5 seconds at 60fps
+      battleRoyaleMode = false;
+      finishGame(input);
+    }
+    return;
+  }
+
+  var alive = [];
+  var deadStates = ["DEADLEFT", "DEADRIGHT", "DEADUP", "DEADDOWN", "REBIRTH", "REBIRTHWAIT", "SLEEP"];
+  for (var i = 0; i < ports; i++) {
+    if (playerType[i] > -1 && player[i]) {
+      // Force stuck eliminated players into SLEEP
+      if (player[i].stocks <= 0 && deadStates.indexOf(player[i].actionState) === -1) {
+        player[i].actionState = "SLEEP";
+        player[i].timer = 0;
+        player[i].phys.pos.y = -9999; // move off stage
+      }
+      var isEliminated = player[i].stocks <= 0 && player[i].actionState === "SLEEP";
+      if (!isEliminated) {
+        alive.push(i);
+      }
+    }
+  }
+
+  if (alive.length <= 1) {
+    battleRoyaleWinner = alive.length === 1 ? alive[0] : -1;
+    brVictoryTimer = 0;
+    // Don't set playing=false — let the game loop keep running so victory screen renders
+    console.log("Battle Royale Winner: Player " + (battleRoyaleWinner + 1));
+  }
+}
+
+export function addKillFeedEntry(victim, attacker) {
+  if (!battleRoyaleMode) return;
+  if (attacker >= 0 && attacker < battleRoyaleKills.length) {
+    battleRoyaleKills[attacker]++;
+  }
+  killFeed.push({
+    victim: victim,
+    attacker: attacker,
+    timer: 0
+  });
+  // Keep feed to last 5
+  if (killFeed.length > 5) {
+    killFeed.shift();
+  }
+}
+
+function renderVictoryScreen() {
+  if (battleRoyaleWinner < 0) return;
+
+  var alpha = Math.min(brVictoryTimer / 60, 1); // fade in over 1 second
+  ui.save();
+  ui.globalAlpha = alpha * 0.7;
+  ui.fillStyle = "black";
+  ui.fillRect(0, 0, 1200, 750);
+  ui.globalAlpha = alpha;
+
+  ui.textAlign = "center";
+
+  // "WINNER" text
+  ui.font = "900 100px Arial";
+  var grad = ui.createLinearGradient(400, 250, 800, 400);
+  grad.addColorStop(0, "rgb(255, 215, 0)");
+  grad.addColorStop(0.5, "rgb(255, 255, 150)");
+  grad.addColorStop(1, "rgb(255, 215, 0)");
+  ui.fillStyle = grad;
+  ui.strokeStyle = "black";
+  ui.lineWidth = 6;
+  ui.strokeText("WINNER!", 600, 320);
+  ui.fillText("WINNER!", 600, 320);
+
+  // Player info
+  var isP1 = battleRoyaleWinner === 0;
+  var charName = charNames[characterSelections[battleRoyaleWinner]] || "???";
+  var label = isP1 ? "YOU" : "CPU " + (battleRoyaleWinner + 1);
+
+  ui.font = "900 50px Arial";
+  ui.fillStyle = "white";
+  ui.strokeStyle = "black";
+  ui.lineWidth = 3;
+  ui.strokeText(label + " - " + charName, 600, 420);
+  ui.fillText(label + " - " + charName, 600, 420);
+
+  // KO count
+  var kos = battleRoyaleKills[battleRoyaleWinner] || 0;
+  ui.font = "700 35px Arial";
+  ui.fillStyle = "rgb(200, 200, 200)";
+  ui.fillText(kos + " KOs", 600, 480);
+
+  // P1 stats
+  if (!isP1) {
+    var p1kos = battleRoyaleKills[0] || 0;
+    ui.font = "700 30px Arial";
+    ui.fillStyle = "rgb(180, 180, 180)";
+    ui.fillText("Your KOs: " + p1kos, 600, 540);
+  }
+
+  ui.restore();
+}
+
+function renderBattleRoyaleHUD() {
+  ui.save();
+
+  // KO count (top-left, below minimap)
+  var p1Kills = battleRoyaleKills[0] || 0;
+  ui.fillStyle = "rgba(0,0,0,0.6)";
+  ui.fillRect(10, 140, 120, 30);
+  ui.fillStyle = "white";
+  ui.font = "bold 20px Arial";
+  ui.textAlign = "left";
+  ui.fillText("KOs: " + p1Kills, 20, 162);
+
+  // Kill feed (right side)
+  ui.textAlign = "right";
+  ui.font = "bold 14px Arial";
+  for (var f = 0; f < killFeed.length; f++) {
+    var entry = killFeed[f];
+    entry.timer++;
+    var fadeAlpha = Math.max(0, 1 - entry.timer / 300); // fade over 5 seconds
+    if (fadeAlpha <= 0) continue;
+
+    var yPos = 80 + f * 22;
+    ui.globalAlpha = fadeAlpha;
+    ui.fillStyle = "rgba(0,0,0,0.5)";
+    ui.fillRect(880, yPos - 14, 310, 20);
+
+    var vName = entry.victim === 0 ? "YOU" : "CPU " + (entry.victim + 1);
+    var aName = entry.attacker === 0 ? "YOU" : entry.attacker >= 0 ? "CPU " + (entry.attacker + 1) : "???";
+
+    ui.fillStyle = entry.victim === 0 ? "rgb(255,100,100)" : "rgb(200,200,200)";
+    ui.fillText(aName + " eliminated " + vName, 1185, yPos);
+  }
+
+  // Clean expired entries
+  killFeed = killFeed.filter(function(e) { return e.timer < 300; });
+
+  ui.restore();
+}
+// --- End Battle Royale ---
+
 export function startGame (){
+  // If battle royale is pending, spawn AI and set stage before proceeding
+  if (battleRoyalePending) {
+    initBattleRoyale();
+  }
+
   setVsStage(stageSelect);
   setBackgroundType(Math.round(Math.random()));
   if (holiday == 1){
@@ -1870,6 +2099,11 @@ export function startGame (){
   playing = true;
   resetBlastzoneShrink();
 
+  // Finalize battle royale (set 1 stock after player objects are built)
+  if (battleRoyaleMode) {
+    finalizeBattleRoyale();
+  }
+
   // Auto-enable camera for large stages or many players
   if (stageSelect === 6 || ports > 4) {
     enableCamera();
@@ -1878,6 +2112,8 @@ export function startGame (){
 
 export function endGame (input){
   disableCamera();
+  battleRoyaleMode = false;
+  battleRoyaleWinner = -1;
   // Restore original blastzone
   var stageEnd = getActiveStage();
   if (stageEnd && stageEnd.blastzone && bzOriginal) {
