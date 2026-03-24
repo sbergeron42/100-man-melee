@@ -25,6 +25,7 @@ export var callbacks = {
   onWorldState: null,
   onKillFeed: null,
   onGameOver: null,
+  onHitReceived: null, // function(damage, knockback, angle, attackerServerId)
 };
 export var lobbyCountdown = 0;
 
@@ -141,6 +142,23 @@ export function sendHostStart() {
   ws.send(buf);
 }
 
+// Send hit event: tells server "I hit victim for this much"
+// Server relays to victim's client so they apply the knockback
+export function sendHitEvent(victimServerId, damage, knockback, angle, attackerServerId) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  var buf = new Uint8Array(9);
+  buf[0] = OP.HIT_EVENT;
+  buf[1] = victimServerId;
+  buf[2] = (damage >> 8) & 0xFF;
+  buf[3] = damage & 0xFF;
+  buf[4] = (knockback >> 8) & 0xFF;
+  buf[5] = knockback & 0xFF;
+  buf[6] = (angle >> 8) & 0xFF;
+  buf[7] = angle & 0xFF;
+  buf[8] = attackerServerId;
+  ws.send(buf);
+}
+
 export function sendPlayerDied(killedBy) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   var buf = new Uint8Array(2);
@@ -241,6 +259,18 @@ function handleMessage(buf) {
       gamePhase = PHASES.GAMEOVER;
       console.log('Game Over! Winner: Player ' + buf[1]);
       if (callbacks.onGameOver) callbacks.onGameOver(buf[1]);
+      break;
+
+    case OP.HIT_EVENT:
+      // We got hit! [opcode, victimServerId, damageHi, damageLo, kbHi, kbLo, angleHi, angleLo, attackerServerId]
+      if (buf.length >= 9) {
+        var hitDamage = (buf[2] << 8) | buf[3];
+        var hitKB = (buf[4] << 8) | buf[5];
+        var hitAngle = (buf[6] << 8) | buf[7];
+        var hitAttacker = buf[8];
+        console.log('Hit received! dmg=' + hitDamage + ' kb=' + hitKB + ' angle=' + hitAngle + ' from=' + hitAttacker);
+        if (callbacks.onHitReceived) callbacks.onHitReceived(hitDamage, hitKB, hitAngle, hitAttacker);
+      }
       break;
 
     default:

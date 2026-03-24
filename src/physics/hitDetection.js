@@ -1,4 +1,4 @@
-import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports, setRemoteHitTimer} from "main/main";
+import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports, setRemoteHitTimer, sendNetworkHit} from "main/main";
 
 import {gameSettings} from "settings";
 import {sounds, setCurrentSfxPlayer} from "main/sfx";
@@ -707,7 +707,7 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
   percentShake(player[v].hit.knockback, v);
   hitEffectsAndSound(v,h,isThrow, hitbox.type);
 
-  // For remote players: apply knockback velocity immediately and set visual override timer
+  // For remote players: apply knockback locally AND send to server
   if (playerType[v] === 3) {
     var rkb = player[v].hit.knockback;
     var rangle = getLaunchAngle(player[v].hit.angle, rkb, false, 0, 0, v);
@@ -717,7 +717,9 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
     player[v].phys.cVel.y = 0;
     // Let the knockback visual play for hitstun frames
     var hitstunFrames = getHitstun(rkb);
-    setRemoteHitTimer(v, Math.min(hitstunFrames, 40)); // cap at 40 frames
+    setRemoteHitTimer(v, Math.min(hitstunFrames, 40));
+    // Send hit to server so victim's client applies it
+    sendNetworkHit(v, Math.round(player[v].percent), Math.round(rkb), Math.round(player[v].hit.angle));
   }
 }
 

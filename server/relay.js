@@ -14,7 +14,7 @@ var BROADCAST_RATE = 50;   // ms between world state broadcasts (20hz)
 var MAX_PLAYERS = 100;
 var TIMEOUT_MS = 10000;    // disconnect after 10s no data
 var MIN_PLAYERS = 2;       // minimum to start
-var LOBBY_COUNTDOWN = 10;  // seconds countdown once min players reached
+var LOBBY_COUNTDOWN = 3;   // seconds countdown once min players reached
 var RESTART_DELAY = 10;    // seconds before restarting after game over
 
 // --- Room State ---
@@ -147,11 +147,22 @@ wss.on('connection', function(ws) {
         break;
 
       case OP.HOST_START:
-        // Legacy — ignored in auto-start model
-        // But allow it to force-start if in lobby with enough players
         if (room.phase === PHASES.LOBBY && room.players.size >= MIN_PLAYERS) {
           cancelCountdown();
           startGame();
+        }
+        break;
+
+      case OP.HIT_EVENT:
+        // Relay hit from attacker to victim
+        // Format: [opcode, victimServerId, damage(uint16), knockback(uint16), angle(uint16), attackerServerId]
+        if (buf.length >= 9 && room.phase === PHASES.PLAYING) {
+          var victimId = buf[1];
+          var victimInfo = room.playerById[victimId];
+          if (victimInfo && victimInfo.ws.readyState === 1) {
+            // Forward the hit event to the victim
+            victimInfo.ws.send(buf);
+          }
         }
         break;
 

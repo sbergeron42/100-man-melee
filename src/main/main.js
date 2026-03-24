@@ -48,7 +48,7 @@ import {deepCopy} from "./util/deepCopy";
 import {deepObjectMerge} from "./util/deepCopyObject";
 import {setTokenPosSnapToChar} from "../menus/css";
 import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera} from "./camera";
-import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, getRoomPlayerCount, getRemoteCharacter, callbacks as netCallbacks} from "./multiplayer/netclient";
+import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, sendHitEvent, getRoomPlayerCount, getRemoteCharacter, callbacks as netCallbacks} from "./multiplayer/netclient";
 /*globals performance*/
 
 export const holiday = 0;
@@ -1859,6 +1859,15 @@ window.spawnAIPlayers = spawnAIPlayers;
 export let networkMode = false;
 export let networkServerUrl = "ws://localhost:3001";
 var serverIdToGameIndex = {}; // maps server player IDs to local game indices
+var gameIndexToServerId = {}; // reverse: local game index -> server player ID
+
+export function sendNetworkHit(victimGameIndex, damage, knockback, angle) {
+  if (!networkMode || !isConnected()) return;
+  var victimServerId = gameIndexToServerId[victimGameIndex];
+  if (victimServerId === undefined) return;
+  var attackerServerId = getLocalPlayerId();
+  sendHitEvent(victimServerId, Math.round(damage), Math.round(knockback), Math.round(angle), attackerServerId);
+}
 
 export function startOnlineBattleRoyale(serverUrl) {
   networkServerUrl = serverUrl || networkServerUrl;
@@ -1895,6 +1904,7 @@ export function startOnlineBattleRoyale(serverUrl) {
 
         // Store mapping: server ID -> game index for state updates
         serverIdToGameIndex[serverId] = gi;
+        gameIndexToServerId[gi] = serverId;
       }
 
       // Build all remote player objects
@@ -1928,6 +1938,30 @@ export function startOnlineBattleRoyale(serverUrl) {
 
   netCallbacks.onKillFeed = function(victimId, killerId, alive) {
     addKillFeedEntry(victimId, killerId);
+  };
+
+  netCallbacks.onHitReceived = function(damage, knockback, angle, attackerServerId) {
+    // Apply the hit to our local player (index 0)
+    if (!player[0] || player[0].stocks <= 0) return;
+    player[0].percent += damage;
+    player[0].hit.knockback = knockback;
+    player[0].hit.angle = angle;
+    player[0].hit.hitstun = Math.floor(knockback * 0.4);
+    player[0].hit.hitlag = Math.floor(damage * (1/3) + 3);
+    // Apply knockback velocity
+    var angleRad = angle * Math.PI / 180;
+    player[0].phys.kVel.x = knockback * 0.03 * Math.cos(angleRad);
+    player[0].phys.kVel.y = knockback * 0.03 * Math.sin(angleRad);
+    player[0].phys.cVel.x = 0;
+    player[0].phys.cVel.y = 0;
+    // Put into damage state
+    if (knockback >= 80) {
+      player[0].actionState = "DAMAGEFLYN";
+    } else {
+      player[0].actionState = "DAMAGEN2";
+    }
+    player[0].timer = 0;
+    console.log("Hit applied! dmg=" + damage + " kb=" + knockback + " percent=" + player[0].percent);
   };
 
   // Connect to server

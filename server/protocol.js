@@ -15,6 +15,7 @@ var OPCODES = {
   KILL_FEED:     0x0B, // S->C: kill event
   GAME_OVER:     0x0C, // S->C: winner announcement
   HOST_START:    0x0D, // C->S: host requests game start
+  HIT_EVENT:     0x0E, // C->S->C: hit notification (attacker tells server, server tells victim)
 };
 
 var PHASES = {
