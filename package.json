@@ -32,7 +32,8 @@
   "homepage": "https://github.com/schmooblidon/meleelight#readme",
   "dependencies": {
     "howler": "^2.0.1",
-    "jquery": "1.11.3"
+    "jquery": "1.11.3",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "babel-core": "^6.18.2",
