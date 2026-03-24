@@ -24,6 +24,7 @@ export var onGameStart = null;    // function(playerList: [{id, character}])
 export var onWorldState = null;   // function(states, aliveCount)
 export var onKillFeed = null;     // function(victimId, killerId, aliveCount)
 export var onGameOver = null;     // function(winnerId)
+export var lobbyCountdown = 0;    // seconds until auto-start
 
 export function connectToServer(url) {
   if (ws) ws.close();
@@ -177,6 +178,12 @@ function handleMessage(buf) {
       break;
 
     case OP.CHAR_UPDATE:
+      if (buf[1] === 255) {
+        // Special: lobby status message [opcode, 255, countdown, playerCount]
+        lobbyCountdown = buf[2];
+        roomPlayerCount = buf[3];
+        break;
+      }
       remoteCharacters[buf[1]] = buf[2];
       if (onCharUpdate) onCharUpdate(buf[1], buf[2]);
       break;

@@ -35,7 +35,7 @@ import {
   ,
   networkMode
 } from "main/main";
-import {sendCharacterSelect, sendHostStart, isConnected, getIsHost, getRoomPlayerCount} from "main/multiplayer/netclient";
+import {sendCharacterSelect, sendHostStart, isConnected, getIsHost, getRoomPlayerCount, lobbyCountdown} from "main/multiplayer/netclient";
 import {drawArrayPathCompress, twoPi} from "main/render";
 import {sounds} from "main/sfx";
 import {actionStates} from "physics/actionStateShortcuts";
@@ -468,11 +468,8 @@ export function cssControls(i, input) {
     if (pause[i][0] && !pause[i][1]) {
       sounds.menuForward.play();
       if (battleRoyalePending && networkMode) {
-        // Network mode: send char selection and request game start
+        // Network mode: send char selection, server auto-starts
         sendCharacterSelect(characterSelections[0]);
-        if (getIsHost()) {
-          sendHostStart();
-        }
         // Game will start when server sends GAME_START callback
       } else if (battleRoyalePending) {
         setStageSelect(6);
@@ -486,9 +483,6 @@ export function cssControls(i, input) {
     sounds.menuForward.play();
     if (battleRoyalePending && networkMode) {
       sendCharacterSelect(characterSelections[0]);
-      if (getIsHost()) {
-        sendHostStart();
-      }
     } else if (battleRoyalePending) {
       setStageSelect(6);
       startGame();
@@ -760,9 +754,9 @@ export function drawCSS() {
   ui.save();
   ui.scale(1.25, 1);
   if (battleRoyalePending && networkMode) {
-    var connStatus = isConnected() ? "Connected - " + getRoomPlayerCount() + " players" : "Connecting...";
-    var hostText = getIsHost() ? " (HOST - Press Start)" : " (Waiting for host)";
-    ui.fillText("Online Battle Royale! " + connStatus + hostText, 300, 117);
+    var connStatus = isConnected() ? getRoomPlayerCount() + " players" : "Connecting...";
+    var cdText = lobbyCountdown > 0 ? " - Starting in " + lobbyCountdown + "s" : "";
+    ui.fillText("Online BR! " + connStatus + cdText, 350, 117);
   } else if (battleRoyalePending) {
     ui.fillText("100-Man Battle Royale!", 380, 117);
   } else if (versusMode) {
