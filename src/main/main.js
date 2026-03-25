@@ -16,13 +16,7 @@ import {drawCreditsInit, credits, drawCredits} from "menus/credits";
 import {renderForeground, renderPlayer, renderOverlay, resetLostStockQueue} from "main/render";
 
 import {actionStates} from "physics/actionStateShortcuts";
-import {executeHits, hitDetect, checkPhantoms, resetHitQueue, setPhantonQueue, rebuildSpatialGrid} from "physics/hitDetection";
-import {
-  targetPlayer, targetHitDetection, targetTimerTick, targetTesting, medalsEarned,
-  targetRecords, targetsDestroyed, targetStagePlaying , getTargetCookies , giveMedals, medalTimes
-} from "target/targetplay";
-import {tssControls, drawTSS, drawTSSInit, getTargetStageCookies} from "../stages/targetselect";
-import {targetBuilder, targetBuilderControls, renderTargetBuilder, showingCode} from "target/targetbuilder";
+import {executeHits, hitDetect, checkPhantoms, resetHitQueue, setPhantonQueue, rebuildSpatialGrid, getHorizontalVelocity, getVerticalVelocity, getHitstun, knockbackSounds} from "physics/hitDetection";
 import {destroyArticles, executeArticles, articlesHitDetection, executeArticleHits, renderArticles, resetAArticles} from "physics/article";
 import {runAI, clearNearestEnemyCache} from "main/ai";
 import {physics, rebuildLedgeCache} from "physics/physics";
@@ -41,7 +35,7 @@ import {saveGameState, loadReplay, gameTickDelay} from "./replay";
 import {keyboardMap, showButton, nullInputs, pollInputs, inputData, setCustomCenters, nullInput, ensureAIInputSlot} from "../input/input";
 import {deaden} from "../input/meleeInputs";
 import {getGamepadNameAndInfo} from "../input/gamepad/findGamepadInfo";
-import {customGamepadInfo} from "../input/gamepad/gamepads/custom";
+import {customGamepadInfo, getCustomGamepadInfo, setCustomGamepadInfo} from "../input/gamepad/gamepads/custom";
 import {buttonState} from "../input/gamepad/retrieveGamepadInputs";
 import {updateGamepadSVGState, updateGamepadSVGColour, setGamepadSVGColour, cycleGamepadColour} from "../input/gamepad/drawGamepad";
 import {deepCopy} from "./util/deepCopy";
@@ -62,8 +56,6 @@ export const framerate = [0,0,0];
 export var characterSelections = [];
 
 export var shine = 0.5;
-
-export let endTargetGame = false;
 
 export let creditsPlayer = 0;
 export let calibrationPlayer = 0;
@@ -241,6 +233,8 @@ export function getStartTimer(){
 }
 //matchTimer = 5999.99;
 export let matchTimer = 480;
+export let suddenDeath = false;
+let suddenDeathTimer = 0;
 
 export function addMatchTimer (val){
   matchTimer += val;
@@ -295,7 +289,7 @@ export function setKeyBinding (val){
   keyBinding = val;
 }
 export function overrideKeyboardEvent (e){
-  if (!showingCode && choosingTag == -1 && e.keyCode != 122 && e.keyCode != 116){
+  if (choosingTag == -1 && e.keyCode != 122 && e.keyCode != 116){
     switch(e.type){
       case "keydown":
         if (!keys[e.keyCode]) {
@@ -382,6 +376,28 @@ export function matchTimerTick (input){
 
   if (matchTimer <= 0 && !battleRoyaleMode) {
     finishGame(input);
+  }
+  if (matchTimer <= 0 && battleRoyaleMode && !suddenDeath) {
+    suddenDeath = true;
+    suddenDeathTimer = 0;
+    matchTimer = 0;
+    // Set all alive players to 300%
+    for (var sd = 0; sd < ports; sd++) {
+      if (playerType[sd] > -1 && player[sd] && player[sd].stocks > 0) {
+        player[sd].percent = 300;
+      }
+    }
+    // Shrink blastzone to minimum immediately
+    var stage = getActiveStage();
+    if (stage && stage.blastzone && bzOriginal) {
+      var cx = (bzOriginal.minX + bzOriginal.maxX) / 2;
+      var cy = (bzOriginal.minY + bzOriginal.maxY) / 2;
+      stage.blastzone.min.x = cx - 100;
+      stage.blastzone.max.x = cx + 100;
+      stage.blastzone.min.y = cy - 60;
+      stage.blastzone.max.y = cy + 60;
+    }
+    sounds.game.play();
   }
 }
 
@@ -722,6 +738,11 @@ export function findPlayers (){
       if (detected) {
         if (firstTimeDetected[i]) {
           console.log("Controller "+(i+1)+" is: "+gpdName+".");
+          console.log("Mapping:", JSON.stringify({
+            a: gpdInfo.a, b: gpdInfo.b, x: gpdInfo.x, y: gpdInfo.y,
+            z: gpdInfo.z, r: gpdInfo.r, l: gpdInfo.l, s: gpdInfo.s,
+            lA: gpdInfo.lA, rA: gpdInfo.rA
+          }, null, 2));
           firstTimeDetected[i] = false;
         }
         if (gameMode < 2 || gameMode == 20) {
@@ -907,18 +928,9 @@ export function changeGamemode (newGamemode){
       // Target Builder
     case 4:
       break;
-      // Target Playing
-    case 5:
-      drawBackgroundInit();
-      drawStageInit();
-      break;
       // Stage select (vs)
     case 6:
       drawSSSInit();
-      break;
-      // Target Select
-    case 7:
-      drawTSSInit();
       break;
       // sound menu
     case 10:
@@ -1240,31 +1252,62 @@ export function update (i,inputBuffers){
   physics(i, inputBuffers);
 }
 
-// Track local hit visual overrides for remote players
-var remoteHitTimers = {}; // game index -> frames remaining of local override
 
-export function setRemoteHitTimer(i, frames) {
-  remoteHitTimers[i] = frames;
+// Track previous action state for remote VFX triggers
+var remotePrevState = {};
+
+function triggerRemoteVfx(i, prevAction, newAction) {
+  var pos = player[i].phys.pos;
+  var face = player[i].phys.face;
+
+  // State transition VFX — trigger on entry to new state
+  if (prevAction !== newAction) {
+    switch (newAction) {
+      case "DASH":
+      case "SMASHTURN":
+        drawVfx({ name: "dashDust", pos: pos, face: face });
+        break;
+      case "LANDING":
+      case "LANDINGATTACKAIRN":
+      case "LANDINGATTACKAIRF":
+      case "LANDINGATTACKAIRB":
+      case "LANDINGATTACKAIRU":
+      case "LANDINGATTACKAIRD":
+      case "LANDINGFALLSPECIAL":
+        drawVfx({ name: "impactLand", pos: pos, face: face });
+        drawVfx({ name: "circleDust", pos: pos, face: face });
+        sounds.land.play();
+        break;
+      case "JUMPAERIALF":
+      case "JUMPAERIALB":
+        drawVfx({ name: "doubleJumpRings", pos: pos, face: face });
+        sounds.jump2.play();
+        break;
+      case "DAMAGEFLYN":
+      case "DAMAGEN2":
+        drawVfx({ name: "normalhit", pos: pos, face: face });
+        knockbackSounds(0, player[i].hit.knockback || 0, i);
+        break;
+      case "DEADLEFT":
+      case "DEADRIGHT":
+      case "DEADUP":
+      case "DEADDOWN":
+        drawVfx({ name: "blastzoneExplosion", pos: pos, face: face });
+        sounds.kill.play();
+        screenShake(500);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Continuous VFX — trigger every N frames during certain states
+  if (newAction === "DAMAGEFLYN" && player[i].timer % 10 === 0) {
+    drawVfx({ name: "flyingDust", pos: pos });
+  }
 }
 
 function updateRemotePlayer(i) {
-  // If this remote player was hit locally, let the hit animation play out
-  // before resuming network sync
-  if (remoteHitTimers[i] && remoteHitTimers[i] > 0) {
-    remoteHitTimers[i]--;
-    // Still run minimal physics for knockback visual
-    player[i].phys.pos.x += player[i].phys.kVel.x;
-    player[i].phys.pos.y += player[i].phys.kVel.y;
-    // Apply gravity
-    player[i].phys.kVel.y -= 0.1;
-    // Update hurtbox
-    player[i].phys.hurtbox.min.x = player[i].phys.pos.x - 4;
-    player[i].phys.hurtbox.min.y = player[i].phys.pos.y + 18;
-    player[i].phys.hurtbox.max.x = player[i].phys.pos.x + 4;
-    player[i].phys.hurtbox.max.y = player[i].phys.pos.y;
-    return;
-  }
-
   // Find the server ID that maps to this game index
   var serverId = -1;
   for (var sid in serverIdToGameIndex) {
@@ -1273,8 +1316,15 @@ function updateRemotePlayer(i) {
   if (serverId < 0) return;
   var state = getInterpolatedState(serverId);
   if (!state || !player[i]) return;
+  // Sync character — rebuild player object if it changed
+  if (state.character !== undefined && characterSelections[i] !== state.character) {
+    characterSelections[i] = state.character;
+    buildPlayerObject(i);
+    player[i].stocks = state.stocks;
+  }
   player[i].phys.pos.x = state.x;
   player[i].phys.pos.y = state.y;
+  var prevAction = remotePrevState[i] || "WAIT";
   player[i].actionState = state.actionState;
   player[i].timer = state.timer;
   player[i].phys.face = state.face;
@@ -1284,6 +1334,9 @@ function updateRemotePlayer(i) {
   player[i].phys.cVel.y = state.velY;
   player[i].phys.grounded = state.grounded;
   player[i].phys.shielding = state.shielding;
+  // Trigger VFX based on state transitions
+  triggerRemoteVfx(i, prevAction, state.actionState);
+  remotePrevState[i] = state.actionState;
   // Update hurtbox position so hit detection works against remote players
   player[i].phys.hurtbox.min.x = state.x - 4;
   player[i].phys.hurtbox.min.y = state.y + 18;
@@ -1390,71 +1443,6 @@ export function gameTick (oldInputBuffers){
       if (i < ports) {
         input[i] = interpretInputs(i, true,playerType[i],oldInputBuffers[i]);
         sssControls(i, input);
-      }
-    }
-  } else if (gameMode == 7) {
-    // stage select
-    input[targetPlayer] = interpretInputs(targetPlayer, true,playerType[targetPlayer],oldInputBuffers[targetPlayer]);
-    tssControls(targetPlayer, input);
-  } else if (gameMode == 4) {
-    input[targetBuilder] = interpretInputs(targetBuilder, true,playerType[targetBuilder],oldInputBuffers[targetBuilder]);
-    targetBuilderControls(targetBuilder, input);
-  } else if (gameMode == 5) {
-    if (endTargetGame) {
-      finishGame(input);
-    }
-    if (playing || frameByFrame) {
-    
-      var now = performance.now();
-      var dt = now - lastUpdate;
-      lastUpdate = now;
-      resetHitQueue();
-      destroyArticles();
-      executeArticles();
-      if (!starting){
-        input[targetBuilder] = interpretInputs(targetBuilder, true,playerType[targetBuilder],oldInputBuffers[targetBuilder]);
-      }
-      update(targetBuilder,input);
-      executeHits(input);
-      targetHitDetection(targetBuilder);
-      if (!starting) {
-        targetTimerTick();
-      } else {
-        startTimer -= 0.01666667;
-        if (startTimer < 0) {
-          starting = false;
-        }
-      }
-      if (input[targetBuilder][0].s && !input[targetBuilder][1].s) {
-        endGame(input);
-      }
-      if (frameByFrame) {
-        frameByFrameRender = true;
-        wasFrameByFrame = true;
-      }
-      frameByFrame = false;
-
-      if (showDebug) {
-        diff = performance.now() - start;
-        gamelogicTime[0] += diff;
-        gamelogicTime[0] /= 2;
-        if (diff >= 10) {
-          gamelogicTime[3]++;
-        }
-        if (diff < gamelogicTime[2]) {
-          gamelogicTime[2] = diff;
-        }
-        if (diff > gamelogicTime[1]) {
-          gamelogicTime[1] = diff;
-        }
-        dom.gamelogicAvg.innerHTML = Math.round(gamelogicTime[0]);
-        dom.gamelogicHigh.innerHTML = Math.round(gamelogicTime[1]);
-        dom.gamelogicLow.innerHTML = Math.round(gamelogicTime[2]);
-        dom.gamelogicPeak.innerHTML = gamelogicTime[3];
-      }
-    } else {
-      if (!gameEnd) {
-        input[targetBuilder] = interpretInputs(targetBuilder, false,playerType[targetBuilder],oldInputBuffers[targetBuilder]);
       }
     }
   } else if (playing || frameByFrame) {
@@ -1626,57 +1614,6 @@ export function renderTick (){
       //renderVfx();
     } else if (gameMode == 6) {
       drawSSS();
-    } else if (gameMode == 7) {
-      drawTSS();
-    } else if (gameMode == 4) {
-      renderTargetBuilder();
-    } else if (gameMode == 5) {
-      if (playing || frameByFrameRender) {
-        var rStart = performance.now();
-        clearScreen();
-        if (isShowSFX()) {
-          drawBackground();
-        }
-        drawStage();
-        renderPlayer(targetBuilder);
-        renderArticles();
-        renderVfx();
-        renderOverlay(false);
-
-        if (showDebug) {
-          var diff = performance.now() - rStart;
-          renderTime[0] += diff;
-          renderTime[0] /= 2;
-          if (diff >= 10) {
-            renderTime[3]++;
-          }
-          if (diff > renderTime[1]) {
-            renderTime[1] = diff;
-          }
-          if (diff < renderTime[2]) {
-            renderTime[2] = diff;
-          }
-          dom.renderAvg.innerHTML = Math.round(renderTime[0]);
-          dom.renderHigh.innerHTML = Math.round(renderTime[1]);
-          dom.renderLow.innerHTML = Math.round(renderTime[2]);
-          dom.renderPeak.innerHTML = renderTime[3];
-        }
-      }
-      else if (!gameEnd) {
-        clearScreen();
-        if (!starting) {
-          targetTimerTick();    
-        }
-        if (isShowSFX()) {
-          drawBackground();
-        }
-        drawStage();
-        renderPlayer(targetBuilder);
-        renderArticles();
-        renderVfx();
-        renderOverlay(false);
-        renderForeground();
-      }
     } else if (playing || frameByFrameRender) {
       /*delta = timestamp - lastFrameTimeMs; // get the delta time since last frame
       lastFrameTimeMs = timestamp;
@@ -1731,6 +1668,22 @@ export function renderTick (){
       // Render minimap
       if (cameraEnabled && ports > 4) {
         renderMinimap();
+      }
+
+      // Sudden death announcement
+      if (suddenDeath && suddenDeathTimer < 180) {
+        suddenDeathTimer++;
+        var sdAlpha = suddenDeathTimer < 30 ? suddenDeathTimer / 30 : suddenDeathTimer > 150 ? (180 - suddenDeathTimer) / 30 : 1;
+        ui.save();
+        ui.globalAlpha = sdAlpha;
+        ui.textAlign = "center";
+        ui.font = "900 80px Arial";
+        ui.fillStyle = "rgb(255, 50, 50)";
+        ui.strokeStyle = "black";
+        ui.lineWidth = 6;
+        ui.strokeText("SUDDEN DEATH", 600, 400);
+        ui.fillText("SUDDEN DEATH", 600, 400);
+        ui.restore();
       }
 
       // Battle royale victory screen
@@ -1814,19 +1767,12 @@ export function buildPlayerObject (i){
 
 
 
-export function initializePlayers (i,target){
+export function initializePlayers (i){
   buildPlayerObject(i);
-  if (target) {
-    drawVfx({
-      name: "entrance",
-      pos: new Vec2D(activeStage.startingPoint[0].x, activeStage.startingPoint[0].y)
-    });
-  } else {
-    drawVfx({
-      name: "entrance",
-      pos: new Vec2D(startingPoint[i][0], startingPoint[i][1])
-    });
-  }
+  drawVfx({
+    name: "entrance",
+    pos: new Vec2D(startingPoint[i][0], startingPoint[i][1])
+  });
 }
 
 export function spawnAIPlayers(count) {
@@ -1887,8 +1833,7 @@ export function startOnlineBattleRoyale(serverUrl) {
       for (var i = 0; i < playerList.length; i++) {
         var serverId = playerList[i].id;
         if (serverId === localServerId) {
-          // This is us — set our character
-          characterSelections[0] = playerList[i].character;
+          // This is us — keep our local character selection (don't override from server)
           continue;
         }
         // Remote player
@@ -1936,6 +1881,24 @@ export function startOnlineBattleRoyale(serverUrl) {
     brVictoryTimer = 0;
   };
 
+  netCallbacks.onPlayerLeft = function(leftServerId, remaining) {
+    // Find the game index for this server ID
+    var gi = serverIdToGameIndex[leftServerId];
+    if (gi !== undefined && player[gi]) {
+      // Eliminate the disconnected player
+      player[gi].stocks = 0;
+      player[gi].actionState = "SLEEP";
+      player[gi].timer = 0;
+      player[gi].phys.pos.y = -9999;
+      playerType[gi] = -1;
+      // Clean up mappings
+      delete serverIdToGameIndex[leftServerId];
+      delete gameIndexToServerId[gi];
+      delete remotePrevState[gi];
+      console.log("Player " + leftServerId + " (game index " + gi + ") disconnected and removed");
+    }
+  };
+
   netCallbacks.onKillFeed = function(victimId, killerId, alive) {
     addKillFeedEntry(victimId, killerId);
   };
@@ -1943,25 +1906,64 @@ export function startOnlineBattleRoyale(serverUrl) {
   netCallbacks.onHitReceived = function(damage, knockback, angle, attackerServerId) {
     // Apply the hit to our local player (index 0)
     if (!player[0] || player[0].stocks <= 0) return;
+
+    // Ground bounce: downward angles on grounded players bounce up
+    if (player[0].phys.grounded && angle > 180) {
+      if (knockback >= 80) {
+        angle = 360 - angle;
+        knockback = knockback * 0.8;
+      }
+    }
+
+    // Apply damage
     player[0].percent += damage;
+
+    // Store hit properties — hitlagSwitchUpdate in physics.js reads these
+    // when hitlag reaches 0 and applies kVel with DI from victim's stick input
     player[0].hit.knockback = knockback;
     player[0].hit.angle = angle;
-    player[0].hit.hitstun = Math.floor(knockback * 0.4);
+    player[0].hit.hitstun = getHitstun(knockback);
     player[0].hit.hitlag = Math.floor(damage * (1/3) + 3);
-    // Apply knockback velocity
-    var angleRad = angle * Math.PI / 180;
-    player[0].phys.kVel.x = knockback * 0.03 * Math.cos(angleRad);
-    player[0].phys.kVel.y = knockback * 0.03 * Math.sin(angleRad);
+
+    // The angle we receive is already reversed by the attacker based on
+    // relative positions. Set reverse=false so hitlagSwitchUpdate doesn't
+    // flip it again. The victim can still DI during hitlag.
+    player[0].hit.reverse = false;
+
+    // Face away from the hit direction
+    var attackerGameIndex = serverIdToGameIndex[attackerServerId];
+    if (attackerGameIndex !== undefined && player[attackerGameIndex]) {
+      player[0].phys.face = player[attackerGameIndex].phys.pos.x >= player[0].phys.pos.x ? 1 : -1;
+    } else {
+      // Fallback: face based on angle (hit from right = face right)
+      player[0].phys.face = (angle > 90 && angle < 270) ? 1 : -1;
+    }
+
+    // Don't set kVel here — hitlagSwitchUpdate will compute it when hitlag
+    // expires, using getLaunchAngle with the victim's stick input (DI).
+    // Just zero out cVel so the player doesn't drift during hitlag.
     player[0].phys.cVel.x = 0;
     player[0].phys.cVel.y = 0;
-    // Put into damage state
+
+    // Use proper action state init (sets up grabs, fastfall, hitboxes, timer, etc.)
+    var input = inputData;
     if (knockback >= 80) {
-      player[0].actionState = "DAMAGEFLYN";
+      actionStates[characterSelections[0]].DAMAGEFLYN.init(0, input, true);
     } else {
-      player[0].actionState = "DAMAGEN2";
+      actionStates[characterSelections[0]].DAMAGEN2.init(0, input);
     }
-    player[0].timer = 0;
-    console.log("Hit applied! dmg=" + damage + " kb=" + knockback + " percent=" + player[0].percent);
+
+    // Hit VFX and sound on victim's screen
+    drawVfx({
+      name: "normalhit",
+      pos: player[0].phys.pos,
+      face: player[0].phys.face
+    });
+    knockbackSounds(0, knockback, 0);
+
+    // Screen shake and percent shake
+    screenShake(knockback);
+    percentShake(knockback, 0);
   };
 
   // Connect to server
@@ -1995,6 +1997,8 @@ export function initBattleRoyale() {
   battleRoyalePending = false;
   battleRoyaleMode = true;
   battleRoyaleWinner = -1;
+  suddenDeath = false;
+  suddenDeathTimer = 0;
   battleRoyaleKills = [];
   killFeed = [];
 
@@ -2115,7 +2119,19 @@ function renderVictoryScreen() {
   // Player info
   var isP1 = battleRoyaleWinner === 0;
   var charName = charNames[characterSelections[battleRoyaleWinner]] || "???";
-  var label = isP1 ? "YOU" : "CPU " + (battleRoyaleWinner + 1);
+  var label;
+  if (battleRoyaleWinner === 255 || battleRoyaleWinner >= ports) {
+    label = "???";
+    charName = "";
+  } else if (isP1) {
+    label = "YOU";
+  } else if (networkMode && playerType[battleRoyaleWinner] === 3) {
+    label = "Player " + (battleRoyaleWinner + 1);
+  } else if (playerType[battleRoyaleWinner] === 1) {
+    label = "CPU " + (battleRoyaleWinner + 1);
+  } else {
+    label = "Player " + (battleRoyaleWinner + 1);
+  }
 
   ui.font = "900 50px Arial";
   ui.fillStyle = "white";
@@ -2240,7 +2256,19 @@ export function startGame (){
 
   for (var n = 0; n < ports; n++) {
     if (playerType[n] > -1) {
-      initializePlayers(n, false);
+      // In network mode, use server ID for spawn position so each client
+      // gets a unique spawn point (local player is always game index 0
+      // but may have server ID 3, so they spawn at position 3)
+      if (networkMode) {
+        var spawnServerId = (n === 0) ? getLocalPlayerId() : (gameIndexToServerId[n] || n);
+        var savedPoint = startingPoint[n];
+        var savedFace = startingFace[n];
+        if (startingPoint[spawnServerId]) {
+          startingPoint[n] = startingPoint[spawnServerId];
+          startingFace[n] = startingFace[spawnServerId] || 1;
+        }
+      }
+      initializePlayers(n);
       renderPlayer(n);
       player[n].inCSS = false;
     }
@@ -2343,12 +2371,6 @@ export function endGame (input){
   } else if (gameMode == 3) {
     changeGamemode(2);
     MusicManager.playMenuLoop();
-  } else if (gameMode == 5) {
-    if (targetTesting) {
-      changeGamemode(4);
-    } else {
-      changeGamemode(7);
-    }
   }
   pause = [];
   frameAdvance = [];
@@ -2374,7 +2396,6 @@ export function endGame (input){
 }
 
 export function finishGame (input){
-    setEndTargetGame(false);
   gameEnd = true;
   playing = false;
   fg2.save();
@@ -2383,47 +2404,7 @@ export function finishGame (input){
   var size = 300;
   var textScale = 1;
   var textGrad = fg2.createLinearGradient(0, 200, 0, 520);
-  if (gameMode == 5 || gameMode == 8) {
-    if (activeStage.target.length == targetsDestroyed) {
-      if (!targetTesting) {
-        if (targetStagePlaying < 10) {
-          for (var i = 0; i < 3; i++) {
-            if (!medalsEarned[characterSelections[targetPlayer]][targetStagePlaying][i]) {
-              if (Math.round(matchTimer * 100) / 100 <= medalTimes[characterSelections[targetPlayer]][targetStagePlaying][i]) {
-                medalsEarned[characterSelections[targetPlayer]][targetStagePlaying][i] = true;
-              }
-            }
-          }
-        }
-        if (matchTimer < targetRecords[characterSelections[targetPlayer]][targetStagePlaying] || targetRecords[characterSelections[targetPlayer]][targetStagePlaying] == -1) {
-          targetRecords[characterSelections[targetPlayer]][targetStagePlaying] = matchTimer;
-          sounds.newRecord.play();
-          setCookie(characterSelections[targetPlayer] + "target" + targetStagePlaying, targetRecords[characterSelections[targetPlayer]][targetStagePlaying], 36500);
-        } else {
-          sounds.complete.play();
-        }
-      } else {
-        sounds.complete.play();
-      }
-      text = "Complete!";
-      size = 200;
-      textScale = 1.5;
-      var textGrad = fg2.createLinearGradient(0, 200 / textScale, 0, 520 / textScale);
-      textGrad.addColorStop(0, "black");
-      textGrad.addColorStop(0.4, "black");
-      textGrad.addColorStop(0.8, "rgb(150, 86, 46)");
-      textGrad.addColorStop(1, "rgb(205, 108, 45)");
-    } else {
-      sounds.failure.play();
-      text = "Failure";
-      size = 250;
-      textGrad.addColorStop(0, "black");
-      textGrad.addColorStop(0.5, "black");
-      textGrad.addColorStop(0.7, "rgb(51, 34, 251)");
-      textGrad.addColorStop(1, "rgb(107, 71, 250)");
-    }
-  } else {
-    if (matchTimer <= 0) {
+  if (matchTimer <= 0) {
       text = "Time!";
       sounds.time.play();
       textGrad.addColorStop(0, "black");
@@ -2437,7 +2418,6 @@ export function finishGame (input){
       textGrad.addColorStop(0.7, "rgb(167, 27, 40)");
       textGrad.addColorStop(1, "rgb(255, 31, 52)");
     }
-  }
   fg2.scale(1, textScale);
   fg2.fillStyle = textGrad;
   fg2.lineWidth = 40;
@@ -2507,11 +2487,39 @@ export function start (){
   }
     cacheDom();
     getKeyboardCookie();
-    getTargetCookies();
-    giveMedals();
-    getTargetStageCookies();
     getAudioCookies();
     getGameplayCookies();
+    // Auto-load saved custom gamepad profiles
+    // Check all 7 save slots; load into gamepad indices 0-3
+    for (var gpIdx = 0; gpIdx < 4; gpIdx++) {
+      var saved = getCustomGamepadInfo(gpIdx + 1);
+      if (saved && saved.gamepadInfo) {
+        setCustomGamepadInfo(gpIdx, saved.gamepadInfo);
+        while (usingCustomControls.length <= gpIdx) usingCustomControls.push(false);
+        usingCustomControls[gpIdx] = true;
+        mType[gpIdx] = saved.gamepadInfo;
+      }
+    }
+    // Dev default: Pro Controller / Xbox XInput with B and Y swapped
+    var devProfile = {
+      a: {kind:"pressed",index:0}, b: {kind:"pressed",index:1},
+      x: {kind:"pressed",index:2}, y: {kind:"pressed",index:3},
+      z: {kind:"pressed",index:5}, r: null, l: null,
+      s: {kind:"pressed",index:9},
+      lA: {kind:"value",index:6,min:0,max:1},
+      rA: {kind:"value",index:7,min:0,max:1},
+      dpad: {kind:"buttons",upIndex:12,downIndex:13,leftIndex:14,rightIndex:15},
+      ls: {kind:"axes",xIndex:0,yIndex:1,cardinals:{center:{x:0,y:0},left:-1,right:1,down:1,up:-1}},
+      cs: {kind:"axes",xIndex:2,yIndex:3,cardinals:{center:{x:0,y:0},left:-1,right:1,down:1,up:-1}},
+      isGC: false,
+      ids: [{name:"XInput controller",id:"XInput"},{name:"standard gamepad",id:"Standard Gamepad"}]
+    };
+    for (var di = 0; di < 4; di++) {
+      setCustomGamepadInfo(di, devProfile);
+      while (usingCustomControls.length <= di) usingCustomControls.push(false);
+      usingCustomControls[di] = true;
+      mType[di] = devProfile;
+    }
   $("#keyboardButton").click(function(){
     $("#keyboardControlsImg").toggle();
     $("#keyboardPrompt").hide();
@@ -2725,9 +2733,6 @@ export function setFindingPlayers(val){
 }
 export function setPlaying(val){
   playing = val;
-}
-export function setEndTargetGame(val){
-    endTargetGame = val;
 }
 export function setCreditsPlayer(val){
   creditsPlayer =val;

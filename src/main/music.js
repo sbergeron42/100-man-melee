@@ -1,5 +1,7 @@
 /* eslint-disable no-undef */
 
+const _musicDisabled = true; // dev: disable music by default
+
 export class MusicManager {
 
   constructor() {
@@ -116,6 +118,7 @@ export class MusicManager {
   static whatisPlaying;
 
   static playLoop(track, sprite) {
+    if (_musicDisabled) return;
     this.stopWhatisPlaying();
     console.log("starting sound");
     console.log(track._src);

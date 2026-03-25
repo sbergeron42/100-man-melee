@@ -2,9 +2,6 @@ import {bg1,fg1,fg2,bg2, player, changeGamemode, positionPlayersInCSS, setKeyBin
     setCreditsPlayer, setCalibrationPlayer, currentPlayers, startBattleRoyale, startOnlineBattleRoyale
 } from "main/main";
 import {sounds} from "main/sfx";
-import {setTargetPlayer} from "target/targetplay";
-import {setTargetPointerPos} from "../stages/targetselect";
-import {setEditingStage, setTargetBuilder} from "target/targetbuilder";
 import {twoPi} from "main/render";
 
 import {connectToMPServer} from "../main/multiplayer/streamclient";
@@ -17,21 +14,21 @@ import {runCalibration} from "../input/gamepad/gamepadCalibration";
 let menuSelected = 0;
 
 const menuText = [
-  ["100-Man Melee", "Online Melee", "VS. Melee", "Target Test", "Target Builder", "Options"],
+  ["100-Man Melee", "Online Melee", "VS. Melee", "Options"],
   ["Audio", "Gameplay", "Keyboard Controls", "Credits"],
   ["Local VS", "Spectate", "P2P", "Server"],
   ["Controller", "Keyboard"]
 ];
 const menuExplanation = [
-  ["100 Player Battle Royale!", "Online Battle Royale!", "Multiplayer Battles!", "Smash ten targets!", "Build target test stages!", "Game setup."],
+  ["100 Player Battle Royale!", "Online Battle Royale!", "Multiplayer Battles!", "Game setup."],
   ["Select audio levels.", "Change gameplay settings.", "Customize & calibrate controls.", "Who did this?"],
   ["One box this screen.", "Ranked Mode", "Hostless Muliplayer", "Hosted Multiplayer"],
   ["Customize & calibrate controller.", "Customize keyboard controls."]
 ];
-const menuCount = [6, 4, 4,2];
+const menuCount = [4, 4, 4,2];
 const menuTitle = ["Main Menu", "Options", "Battle Mode", "Controls"];
 let menuColourOffset = 0;
-const menuColours = [0, 55, 238, 358, 117, 55];
+const menuColours = [0, 55, 238, 55];
 let menuCurColour = 238;
 //hsl(55, 100%, 50%)
 let menuCycle = 0;
@@ -49,9 +46,7 @@ const CONTROLLERCALIB = 3;
 const BATTLEROYALE = 0;
 const ONLINEMELEE = 1;
 const VSMODE = 2;
-const TARGETTEST = 3;
-const TARGETBUILDER = 4;
-const OPTIONS = 5;
+const OPTIONS = 3;
 //second level
 const AUDIOOPTIONS = 0;
 const GAMEPLAYOPTIONS = 1;
@@ -81,31 +76,10 @@ export function menuMove(i, input) {
       } else if (menuSelected == VSMODE) {
         menuSelected = LOCALVS;
         menuMode = MPMENU;
-      } else {
-        if (menuSelected == TARGETTEST) {
-          setTargetPlayer(i);
-
-          setTargetPointerPos([178.5, 137]);
-          //input[i].a[1] = true;
-         MusicManager.stopWhatisPlaying();
-        MusicManager.playTargetTestLoop();
-          changeGamemode(7);
-        } else {
-          if (menuSelected == TARGETBUILDER) {
-            setEditingStage(-1);
-            setTargetBuilder(i);
-            //input[i].a[1] = true;
-            changeGamemode(4);
-          } else {
-
-            if (menuSelected == OPTIONS) {
-              // options
-              menuMode = SECONDLEVELOPTIONS;
-              menuSelected = AUDIOOPTIONS;
-              menuMove = true;
-            }
-          }
-        }
+      } else if (menuSelected == OPTIONS) {
+        menuMode = SECONDLEVELOPTIONS;
+        menuSelected = AUDIOOPTIONS;
+        menuMove = true;
       }
     } else if (menuMode === MPMENU) {
 
@@ -247,16 +221,6 @@ export function menuMove(i, input) {
     }
     if (menuSelected == menuCount[menuMode]) {
       menuSelected = 0;
-    }
-    if ((previousMenuS == TARGETTEST && menuSelected == TARGETBUILDER) || (previousMenuS == TARGETBUILDER && menuSelected == TARGETTEST)) {
-      if (menuSelected == TARGETTEST) {
-        menuColours[menuSelected] = 0;
-      } else {
-        menuCurColour = 0;
-      }
-    } else if (previousMenuS == TARGETTEST) {
-      menuCurColour = 358;
-      menuColours[1] = 358;
     }
     menuColourOffset = menuColours[menuSelected] - menuCurColour;
   }

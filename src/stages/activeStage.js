@@ -1,5 +1,4 @@
 import vsstages from 'stages/vs-stages/vs-stages';
-import tstages from 'stages/targetstages/tstages';
 import {Box2D} from "../main/util/Box2D";
 import {Vec2D} from "../main/util/Vec2D";
 
@@ -34,22 +33,6 @@ export function setVsStage(val) {
 }
 
 
-export const targetStageMapping = {
-  0: "targetstage1",
-  1: "targetstage2",
-  2: "targetstage3",
-  3: "targetstage4",
-  4: "targetstage5",
-  5: "targetstage6",
-  6: "targetstage7",
-  7: "targetstage8",
-  8: "targetstage9",
-  9: "targetstage10"
-};
-
-export function setActiveStageTarget(val) {
-  activeStage = tstages[targetStageMapping[val]];
-}
 
 
 export let activeStage = {
@@ -71,19 +54,6 @@ export let activeStage = {
 };
 
 
-export function setActiveStageBuilderTestStage( stageTemp ) {
-  activeStage = stageTemp;
-}
-
 export function getActiveStage() {
   return activeStage;
-}
-
-export const customTargetStages = [];
-export function setCustomTargetStages(index, val) {
-  customTargetStages[index] = val;
-}
-
-export function setActiveStageCustomTarget(val){
-  activeStage = customTargetStages[val];
 }

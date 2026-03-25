@@ -10,12 +10,31 @@ var PHASES = protocol.PHASES;
 var STATE_SIZE = protocol.PLAYER_STATE_SIZE;
 
 var PORT = parseInt(process.argv[2]) || 3001;
-var BROADCAST_RATE = 50;   // ms between world state broadcasts (20hz)
 var MAX_PLAYERS = 100;
 var TIMEOUT_MS = 10000;    // disconnect after 10s no data
-var MIN_PLAYERS = 2;       // minimum to start
+var MIN_PLAYERS = 22;      // minimum to start (2 humans + 20 bots for testing)
 var LOBBY_COUNTDOWN = 3;   // seconds countdown once min players reached
 var RESTART_DELAY = 10;    // seconds before restarting after game over
+
+// Dynamic broadcast rate: scales up as players die off
+function getBroadcastRate(aliveCount) {
+  if (aliveCount <= 4)  return 16;  // 60hz — near-local feel
+  if (aliveCount <= 10) return 20;  // 50hz
+  if (aliveCount <= 20) return 22;  // 45hz
+  if (aliveCount <= 50) return 25;  // 40hz
+  return 33;                         // 30hz — 50+ players
+}
+
+function updateBroadcastRate() {
+  if (room.phase !== PHASES.PLAYING || !room.broadcastInterval) return;
+  var newRate = getBroadcastRate(room.aliveCount);
+  if (newRate !== room.currentBroadcastRate) {
+    clearInterval(room.broadcastInterval);
+    room.broadcastInterval = setInterval(broadcastWorldState, newRate);
+    room.currentBroadcastRate = newRate;
+    console.log('Broadcast rate: ' + Math.round(1000/newRate) + 'hz (' + newRate + 'ms) for ' + room.aliveCount + ' alive');
+  }
+}
 
 // --- Room State ---
 var room = {
@@ -26,6 +45,7 @@ var room = {
   aliveCount: 0,
   tick: 0,
   broadcastInterval: null,
+  currentBroadcastRate: 0,
   countdownTimer: null,
   countdownSeconds: 0,
   restartTimer: null,
@@ -139,6 +159,7 @@ wss.on('connection', function(ws) {
           broadcastAll(kf);
 
           console.log('Player ' + id + ' eliminated. Alive: ' + room.aliveCount);
+          updateBroadcastRate();
 
           if (room.aliveCount <= 1) {
             endGame();
@@ -186,6 +207,7 @@ wss.on('connection', function(ws) {
 
     if (room.phase === PHASES.PLAYING) {
       room.aliveCount = countAlive();
+      updateBroadcastRate();
       if (room.aliveCount <= 1) {
         endGame();
       }
@@ -301,9 +323,12 @@ function startGame() {
 
   console.log('=== GAME STARTED with ' + playerCount + ' players ===');
 
-  // Start world state broadcast
+  // Start world state broadcast with dynamic rate
   if (room.broadcastInterval) clearInterval(room.broadcastInterval);
-  room.broadcastInterval = setInterval(broadcastWorldState, BROADCAST_RATE);
+  var initialRate = getBroadcastRate(room.aliveCount);
+  room.currentBroadcastRate = initialRate;
+  room.broadcastInterval = setInterval(broadcastWorldState, initialRate);
+  console.log('Broadcast rate: ' + Math.round(1000/initialRate) + 'hz (' + initialRate + 'ms) for ' + room.aliveCount + ' alive');
 }
 
 function broadcastWorldState() {
@@ -317,6 +342,7 @@ function broadcastWorldState() {
       console.log('Player ' + info.id + ' timed out');
       info.alive = false;
       room.aliveCount = countAlive();
+      updateBroadcastRate();
     }
   });
 
@@ -402,6 +428,7 @@ function resetRoom() {
   room.phase = PHASES.LOBBY;
   room.nextId = 0;
   room.aliveCount = 0;
+  room.currentBroadcastRate = 0;
   room.tick = 0;
   room.playerById = [];
   cancelCountdown();

@@ -11,6 +11,9 @@ let christmasbackdrop = new Image();
 christmasbackdrop.src = "assets/christmas/christmasbackdrop.png";
 
 export function drawStartUp (){
+  // Skip splash screens — go straight to title screen
+  changeGamemode(0);
+  return;
   startUpTimer++;
   if (startUpTimer == 1 && holiday == 1){
     fg1.globalAlpha = 0.3;

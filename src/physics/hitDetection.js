@@ -1,4 +1,4 @@
-import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports, setRemoteHitTimer, sendNetworkHit} from "main/main";
+import {playerType, player, characterSelections, screenShake, gameMode, percentShake, ports, sendNetworkHit} from "main/main";
 
 import {gameSettings} from "settings";
 import {sounds, setCurrentSfxPlayer} from "main/sfx";
@@ -707,19 +707,12 @@ export function executeRegularHit (input, v, a, h, shieldHit, isThrow, drawBounc
   percentShake(player[v].hit.knockback, v);
   hitEffectsAndSound(v,h,isThrow, hitbox.type);
 
-  // For remote players: apply knockback locally AND send to server
+  // For remote players: send hit to server, let victim's client handle knockback
+  // Attacker just sees the victim's real state via server relay (no local prediction)
   if (playerType[v] === 3) {
     var rkb = player[v].hit.knockback;
-    var rangle = getLaunchAngle(player[v].hit.angle, rkb, false, 0, 0, v);
-    player[v].phys.kVel.x = getHorizontalVelocity(rkb, rangle);
-    player[v].phys.kVel.y = getVerticalVelocity(rkb, rangle, player[v].phys.grounded, player[v].hit.angle);
-    player[v].phys.cVel.x = 0;
-    player[v].phys.cVel.y = 0;
-    // Let the knockback visual play for hitstun frames
-    var hitstunFrames = getHitstun(rkb);
-    setRemoteHitTimer(v, Math.min(hitstunFrames, 40));
-    // Send hit to server so victim's client applies it
-    sendNetworkHit(v, Math.round(player[v].percent), Math.round(rkb), Math.round(player[v].hit.angle));
+    var rangle = getLaunchAngle(player[v].hit.angle, rkb, player[v].hit.reverse, 0, 0, v);
+    sendNetworkHit(v, Math.round(damage), Math.round(rkb), Math.round(rangle));
   }
 }
 

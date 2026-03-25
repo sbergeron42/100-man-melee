@@ -24,8 +24,8 @@ function spawnBot(index) {
     ws: null,
     playerId: -1,
     alive: true,
-    x: -300 + Math.random() * 600,
-    y: 5,
+    x: -200 + Math.random() * 400,
+    y: 0.001,
     velX: 0,
     velY: 0,
     character: CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)],
@@ -86,6 +86,15 @@ function spawnBot(index) {
           clearInterval(bot.sendInterval);
           bot.sendInterval = null;
         }
+        // Reconnect after a delay
+        setTimeout(function() {
+          bot.alive = true;
+          bot.x = -200 + Math.random() * 400;
+          bot.y = 0.001;
+          bot.phaseTimer = 0;
+          bot.phase = 0;
+          bot.timer = 1;
+        }, 3000);
         break;
 
       default:
@@ -129,8 +138,8 @@ function updateBot(bot) {
       bot.velY -= 0.1; // gravity
       bot.y += bot.velY;
       bot.x += bot.face * 0.3;
-      if (bot.y <= 5) {
-        bot.y = 5;
+      if (bot.y <= 0.001) {
+        bot.y = 0.001;
         bot.velY = 0;
         bot.grounded = true;
         bot.actionState = 'LANDING';
@@ -149,8 +158,8 @@ function updateBot(bot) {
   }
 
   // Clamp to stage
-  if (bot.x < -320) { bot.x = -320; bot.face = 1; }
-  if (bot.x > 320) { bot.x = 320; bot.face = -1; }
+  if (bot.x < -200) { bot.x = -200; bot.face = 1; }
+  if (bot.x > 200) { bot.x = 200; bot.face = -1; }
 
   bot.timer += 1;
   if (bot.timer > 60) bot.timer = 1;
@@ -198,6 +207,8 @@ function sendBotState(bot) {
 }
 
 // Keep process alive
+setInterval(function() {}, 60000);
+
 process.on('SIGINT', function() {
   console.log('Shutting down bots...');
   bots.forEach(function(bot) {

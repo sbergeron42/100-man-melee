@@ -37,6 +37,7 @@ export function connectToServer(url) {
 
   ws.onopen = function() {
     console.log('Connected to relay server');
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
     // Send JOIN: [opcode]
     var join = new Uint8Array(1);
     join[0] = OP.JOIN;

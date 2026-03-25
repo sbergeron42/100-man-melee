@@ -1,6 +1,5 @@
 import {getTransparency} from "main/vfx/transparency";
 import {bg1, bg2, fg1, fg2, layers, gameMode, holiday, snowCount} from "main/main";
-import {targetDestroyed} from "target/targetplay";
 import {rotateVector, twoPi} from "main/render";
 import {activeStage} from "stages/activeStage";
 import {Vec2D} from "../main/util/Vec2D";
@@ -362,32 +361,6 @@ export function drawStage() {
     }
   }*/
     
-  if (typeof activeStage.target !== "undefined") {
-    fg2.strokeStyle = "rgba(255,255,255,0.4)";
-    fg2.lineWidth = 1;
-    for (let k = 0; k < activeStage.target.length; k++) {
-      if (!targetDestroyed[k]) {
-        const x = activeStage.target[k].x * activeStage.scale + activeStage.offset[0];
-        const y = activeStage.target[k].y * -activeStage.scale + activeStage.offset[1];
-        if (holiday === 1){
-          fg2.drawImage(targetbauble,x-17,y-25,35,43);
-          fg2.beginPath();
-          fg2.moveTo(x,y-23);
-          fg2.lineTo(x,0);
-          fg2.closePath();
-          fg2.stroke();
-        } else {
-          for (let j = 0; j < 5; j++) {
-            fg2.fillStyle = (j % 2) ? "white" : "red";
-            fg2.beginPath();
-            fg2.arc(x, y, (25 - j * 5) * (activeStage.scale / 4.5), 0, twoPi);
-            fg2.closePath();
-            fg2.fill();
-          }
-        }
-      }
-    }
-  }
 };
 
 export function setBackgroundType(val) {
