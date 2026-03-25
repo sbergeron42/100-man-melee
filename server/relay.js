@@ -12,9 +12,22 @@ var STATE_SIZE = protocol.PLAYER_STATE_SIZE;
 var PORT = parseInt(process.argv[2]) || 3001;
 var MAX_PLAYERS = 100;
 var TIMEOUT_MS = 10000;    // disconnect after 10s no data
-var MIN_PLAYERS = 22;      // minimum to start (2 humans + 20 bots for testing)
+var MIN_PLAYERS = 2;       // minimum to start
+var TARGET_PLAYERS = 25;   // server fills remaining slots with AI bots
 var LOBBY_COUNTDOWN = 3;   // seconds countdown once min players reached
 var RESTART_DELAY = 10;    // seconds before restarting after game over
+
+// Server-side bot simulation
+var headless = null;
+try {
+  headless = require('./headless/dist/headless');
+  console.log('Headless physics engine loaded');
+} catch(e) {
+  console.log('Headless physics engine not found (run npm run build:headless). Bots disabled.');
+}
+var botRunner = null;
+var botInterval = null;
+var botPlayerInfos = []; // fake PlayerInfo objects for bots
 
 // Dynamic broadcast rate: scales up as players die off
 function getBroadcastRate(aliveCount) {
@@ -179,9 +192,15 @@ wss.on('connection', function(ws) {
         // Format: [opcode, victimServerId, damage(uint16), knockback(uint16), angle(uint16), attackerServerId]
         if (buf.length >= 9 && room.phase === PHASES.PLAYING) {
           var victimId = buf[1];
+          var hitDamage = (buf[2] << 8) | buf[3];
+          var hitKB = (buf[4] << 8) | buf[5];
+          var hitAngle = (buf[6] << 8) | buf[7];
           var victimInfo = room.playerById[victimId];
-          if (victimInfo && victimInfo.ws.readyState === 1) {
-            // Forward the hit event to the victim
+          if (victimInfo && victimInfo.isBot && botRunner) {
+            // Apply hit to server-side bot
+            botRunner.applyHit(victimInfo.botIndex, hitDamage, hitKB, hitAngle);
+          } else if (victimInfo && victimInfo.ws && victimInfo.ws.readyState === 1) {
+            // Forward the hit event to human victim
             victimInfo.ws.send(buf);
           }
         }
@@ -296,32 +315,91 @@ function countAlive() {
   room.players.forEach(function(info) {
     if (info.alive) count++;
   });
+  for (var bi = 0; bi < botPlayerInfos.length; bi++) {
+    if (botPlayerInfos[bi].alive) count++;
+  }
   return count;
 }
 
 function startGame() {
   room.phase = PHASES.PLAYING;
-  room.aliveCount = room.players.size;
   room.tick = 0;
 
   room.players.forEach(function(info) {
     info.alive = true;
   });
 
-  // Build game start message
-  var playerCount = room.players.size;
-  var gs = new Uint8Array(2 + playerCount * 2);
+  // Spawn server-side AI bots to fill remaining slots
+  var humanCount = room.players.size;
+  var botCount = 0;
+  botPlayerInfos = [];
+  if (headless && humanCount < TARGET_PLAYERS) {
+    botCount = Math.min(TARGET_PLAYERS - humanCount, MAX_PLAYERS - humanCount);
+    botRunner = headless.createBotRunner({ botCount: botCount, stageId: 6 });
+    // Create fake PlayerInfo entries for bots (IDs start after human IDs)
+    for (var bi = 0; bi < botCount; bi++) {
+      var botId = room.nextId++;
+      var botState = botRunner.getState(bi);
+      var botInfo = {
+        id: botId,
+        ws: null, // no WebSocket — server-side bot
+        character: botState ? botState.character : Math.floor(Math.random() * 5),
+        state: new Uint8Array(STATE_SIZE),
+        alive: true,
+        lastUpdate: Date.now(),
+        ready: true,
+        isBot: true,
+        botIndex: bi,
+      };
+      botPlayerInfos.push(botInfo);
+      room.playerById[botId] = botInfo;
+    }
+    console.log('Spawned ' + botCount + ' server-side AI bots');
+
+    // Start bot simulation at 60hz
+    if (botInterval) clearInterval(botInterval);
+    botInterval = setInterval(function() {
+      if (room.phase !== PHASES.PLAYING || !botRunner) return;
+      botRunner.tick();
+      // Update bot state buffers for world broadcast
+      for (var bi2 = 0; bi2 < botPlayerInfos.length; bi2++) {
+        if (!botPlayerInfos[bi2].alive) continue;
+        var bs = botRunner.getState(bi2);
+        if (!bs) continue;
+        protocol.encodePlayerState(bs, botPlayerInfos[bi2].state, 0);
+        // Check if bot died (fell off stage)
+        if (bs.stocks <= 0) {
+          botPlayerInfos[bi2].alive = false;
+          room.aliveCount = countAlive();
+          updateBroadcastRate();
+          console.log('Bot ' + botPlayerInfos[bi2].id + ' eliminated. Alive: ' + room.aliveCount);
+          if (room.aliveCount <= 1) endGame();
+        }
+      }
+    }, 16); // 60hz
+  }
+
+  var totalPlayers = humanCount + botCount;
+  room.aliveCount = totalPlayers;
+
+  // Build game start message including bots
+  var gs = new Uint8Array(2 + totalPlayers * 2);
   gs[0] = OP.GAME_START;
-  gs[1] = playerCount;
+  gs[1] = totalPlayers;
   var idx = 2;
   room.players.forEach(function(info) {
     gs[idx] = info.id;
     gs[idx + 1] = info.character;
     idx += 2;
   });
+  for (var bj = 0; bj < botPlayerInfos.length; bj++) {
+    gs[idx] = botPlayerInfos[bj].id;
+    gs[idx + 1] = botPlayerInfos[bj].character;
+    idx += 2;
+  }
   broadcastAll(gs);
 
-  console.log('=== GAME STARTED with ' + playerCount + ' players ===');
+  console.log('=== GAME STARTED with ' + totalPlayers + ' players (' + humanCount + ' human, ' + botCount + ' bots) ===');
 
   // Start world state broadcast with dynamic rate
   if (room.broadcastInterval) clearInterval(room.broadcastInterval);
@@ -346,11 +424,14 @@ function broadcastWorldState() {
     }
   });
 
-  // Build world state
+  // Build world state (humans + bots)
   var activePlayers = [];
   room.players.forEach(function(info) {
     activePlayers.push(info);
   });
+  for (var bi = 0; bi < botPlayerInfos.length; bi++) {
+    activePlayers.push(botPlayerInfos[bi]);
+  }
 
   var headerSize = 6;
   var perPlayer = 1 + STATE_SIZE;
@@ -382,10 +463,18 @@ function endGame() {
     room.broadcastInterval = null;
   }
 
+  // Clean up bot simulation
+  if (botInterval) { clearInterval(botInterval); botInterval = null; }
+  botRunner = null;
+
   var winnerId = 255;
   room.players.forEach(function(info) {
     if (info.alive) winnerId = info.id;
   });
+  // Check bots for winner too
+  for (var bw = 0; bw < botPlayerInfos.length; bw++) {
+    if (botPlayerInfos[bw].alive) winnerId = botPlayerInfos[bw].id;
+  }
 
   var go = new Uint8Array(3);
   go[0] = OP.GAME_OVER;
@@ -431,6 +520,9 @@ function resetRoom() {
   room.currentBroadcastRate = 0;
   room.tick = 0;
   room.playerById = [];
+  botPlayerInfos = [];
+  if (botInterval) { clearInterval(botInterval); botInterval = null; }
+  botRunner = null;
   cancelCountdown();
   if (room.broadcastInterval) {
     clearInterval(room.broadcastInterval);

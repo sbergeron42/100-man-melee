@@ -567,6 +567,7 @@ function hitlagSwitchUpdate(i : number, input : any) : void {
     try {
       actionStates[characterSelections[i]][player[i].actionState].main(i, input);
     } catch(e) {
+      console.error("Action state error for player " + i + " in " + player[i].actionState + ":", e.message);
       // Thrown state errors can occur when grabbedBy references invalid state
       // Recover by forcing the player into a safe action state
       if (player[i].actionState.indexOf("THROWN") === 0 || player[i].actionState.indexOf("CAPTURE") === 0) {

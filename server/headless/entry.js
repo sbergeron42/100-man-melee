@@ -57,7 +57,8 @@ import {
   currentPlayers, mType, pPal, palettes,
   ensurePlayerSlot, buildPlayerObject,
   MAX_PLAYERS, battleRoyaleMode,
-  startingPoint, startingFace
+  startingPoint, startingFace,
+  setGameMode, setPlaying, setStarting
 } from 'main/main';
 import {nullInputs, aiInputBank, ensureAIInputSlot} from 'input/input';
 import {resetVfxQueue} from 'main/vfx/vfxQueue';
@@ -140,10 +141,21 @@ export function createBotRunner(config) {
     player[j].actionState = "WAIT";
     player[j].timer = 0;
     player[j].stocks = 1;
-    player[j].difficulty = Math.floor(Math.random() * 5) + 1;
+    player[j].difficulty = Math.floor(Math.random() * 3) + 3; // difficulty 3-5
+    player[j].inCSS = false;
+    player[j].phys.grounded = true;
+    // Place on stage ground (y=0 for mega battlefield)
+    player[j].phys.pos.y = 0.001;
   }
 
+  // Set game state so AI and physics work correctly
+  // Use setGameMode instead of changeGamemode to avoid rendering side effects
+  setGameMode(3); // VS playing mode
+  setPlaying(true);
+  setStarting(false); // Skip the countdown phase
+
   var tickCount = 0;
+  // Input buffers: 8-frame history per player
   var inputBuffers = [];
   for (var ib = 0; ib < botCount; ib++) inputBuffers.push(nullInputs());
 
@@ -160,12 +172,18 @@ export function createBotRunner(config) {
       destroyArticles();
       executeArticles();
 
-      // Run AI + physics for all bots
+      // Run AI then feed AI input into physics for each bot
       for (var i = 0; i < botCount; i++) {
         if (playerType[i] > -1 && player[i]) {
           if (player[i].actionState !== "SLEEP" && player[i].stocks > 0) {
             runAI(i);
           }
+          // Shift input history and feed current AI input
+          ensureAIInputSlot(i);
+          for (var k = 7; k > 0; k--) {
+            inputBuffers[i][k] = inputBuffers[i][k-1];
+          }
+          inputBuffers[i][0] = aiInputBank[i][0];
           physics(i, inputBuffers);
         }
       }
@@ -221,6 +239,21 @@ export function createBotRunner(config) {
         if (this.isAlive(i)) count++;
       }
       return count;
+    },
+    getPlayerDebug: function(index) {
+      if (!player[index]) return null;
+      return { inCSS: player[index].inCSS, difficulty: player[index].difficulty, face: player[index].phys.face, grounded: player[index].phys.grounded, hitlag: player[index].hit.hitlag, charSel: characterSelections[index] };
+    },
+    getAIInput: function(index) {
+      ensureAIInputSlot(index);
+      var inp = aiInputBank[index] ? aiInputBank[index][0] : null;
+      if (!inp) return null;
+      return { lsX: inp.lsX, lsY: inp.lsY, a: inp.a, b: inp.b, x: inp.x, z: inp.z };
+    },
+    getInputBuffer: function(index) {
+      var inp = inputBuffers[index] ? inputBuffers[index][0] : null;
+      if (!inp) return null;
+      return { lsX: inp.lsX, lsY: inp.lsY, a: inp.a, b: inp.b };
     },
     applyHit: function(botIndex, damage, knockback, angle) {
       // Called when a human player hits a bot

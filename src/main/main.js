@@ -2734,6 +2734,9 @@ export function setFindingPlayers(val){
 export function setPlaying(val){
   playing = val;
 }
+export function setGameMode(val){
+  gameMode = val;
+}
 export function setCreditsPlayer(val){
   creditsPlayer =val;
 }

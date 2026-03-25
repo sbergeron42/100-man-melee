@@ -5,6 +5,7 @@
   "main": "app.js",
   "scripts": {
     "build": "webpack --progress --colors --config=bin/webpack/build.config.js",
+    "build:headless": "webpack --progress --colors --config=bin/webpack/headless.config.js",
     "flow": "flow status src; test $? -eq 0 -o $? -eq 2",
     "dev": "webpack --progress --colors --watch --config=bin/webpack/dev.config.js",
     "animations": "webpack --progress --colors --config=bin/webpack/animations.config.js",
