@@ -360,7 +360,7 @@ function startGame() {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(function() {
       if (room.phase !== PHASES.PLAYING || !botRunner) return;
-      botRunner.tick();
+      try { botRunner.tick(); } catch(e) { /* headless physics error — non-fatal */ }
       // Update bot state buffers for world broadcast
       for (var bi2 = 0; bi2 < botPlayerInfos.length; bi2++) {
         if (!botPlayerInfos[bi2].alive) continue;

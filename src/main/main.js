@@ -411,6 +411,7 @@ export function screenShake (kb){
       }
     }
   }
+  if (!fg1 || typeof fg1.translate !== 'function') return;
   var seed = [Math.random(),Math.random(),Math.random(),Math.random()];
   fg1.translate(kb*0.1*seed[0],kb*0.1*seed[1]);
   setTimeout(function(){fg1.translate(-kb*0.05*seed[0],-kb*0.05*seed[1])},20);
@@ -1691,6 +1692,26 @@ export function renderTick (){
         renderVictoryScreen();
       }
 
+      // Eliminated overlay (local player dead, game still going)
+      if (battleRoyaleMode && localPlayerEliminated && battleRoyaleWinner < 0) {
+        ui.save();
+        ui.globalAlpha = 0.5;
+        ui.fillStyle = "black";
+        ui.fillRect(0, 0, 1200, 100);
+        ui.globalAlpha = 1;
+        ui.textAlign = "center";
+        ui.font = "900 60px Arial";
+        ui.fillStyle = "rgb(200, 60, 60)";
+        ui.strokeStyle = "black";
+        ui.lineWidth = 4;
+        ui.strokeText("ELIMINATED", 600, 65);
+        ui.fillText("ELIMINATED", 600, 65);
+        ui.font = "700 22px Arial";
+        ui.fillStyle = "rgb(180, 180, 180)";
+        ui.fillText("Press Start to return to menu", 600, 95);
+        ui.restore();
+      }
+
       // Battle royale HUD: kill feed + KO count
       if (battleRoyaleMode && battleRoyaleWinner < 0) {
         renderBattleRoyaleHUD();
@@ -1900,7 +1921,24 @@ export function startOnlineBattleRoyale(serverUrl) {
   };
 
   netCallbacks.onKillFeed = function(victimId, killerId, alive) {
-    addKillFeedEntry(victimId, killerId);
+    // Convert server IDs to game indices
+    var victimGameIndex = victimId === getLocalPlayerId() ? 0 : (serverIdToGameIndex[victimId] !== undefined ? serverIdToGameIndex[victimId] : victimId);
+    var killerGameIndex = killerId === getLocalPlayerId() ? 0 : (serverIdToGameIndex[killerId] !== undefined ? serverIdToGameIndex[killerId] : -1);
+    // Don't re-send to server since this came FROM the server
+    killFeed.push({
+      victim: victimGameIndex,
+      attacker: killerGameIndex,
+      timer: 0
+    });
+    if (killFeed.length > 5) killFeed.shift();
+    // Track KOs for local player
+    if (killerGameIndex === 0) {
+      battleRoyaleKills[0] = (battleRoyaleKills[0] || 0) + 1;
+    }
+    // Mark local player as eliminated if they're the victim
+    if (victimGameIndex === 0 && player[0] && player[0].stocks <= 0) {
+      localPlayerEliminated = true;
+    }
   };
 
   netCallbacks.onHitReceived = function(damage, knockback, angle, attackerServerId) {
@@ -1981,6 +2019,7 @@ export let battleRoyaleMode = false;
 export let battleRoyaleWinner = -1;
 export let battleRoyaleKills = [];
 export let killFeed = [];
+let localPlayerEliminated = false;
 
 // Phase 1: Send P1 to CSS to pick character, flag BR mode as pending
 export let battleRoyalePending = false;
@@ -1997,6 +2036,7 @@ export function initBattleRoyale() {
   battleRoyalePending = false;
   battleRoyaleMode = true;
   battleRoyaleWinner = -1;
+  localPlayerEliminated = false;
   suddenDeath = false;
   suddenDeathTimer = 0;
   battleRoyaleKills = [];
@@ -2036,6 +2076,20 @@ var brVictoryTimer = 0;
 var charNames = ["Marth", "Jigglypuff", "Fox", "Falco", "C.Falcon"];
 
 function checkBattleRoyaleWinner(input) {
+  // Allow early exit via Start button during eliminated/victory state
+  if (input[0] && input[0][0] && input[0][0].s && !input[0][1].s) {
+    if (localPlayerEliminated || (battleRoyaleWinner >= 0 && brVictoryTimer > 60)) {
+      wasInBattleRoyale = true;
+      battleRoyaleMode = false;
+      localPlayerEliminated = false;
+      if (networkMode) {
+        disconnectFromServer();
+      }
+      endGame(input);
+      return;
+    }
+  }
+
   if (battleRoyaleWinner >= 0) {
     // Already found winner, count down to end
     brVictoryTimer++;
@@ -2076,7 +2130,17 @@ export function addKillFeedEntry(victim, attacker) {
   if (!battleRoyaleMode) return;
   // Send death to server if we're the victim in network mode
   if (networkMode && isConnected() && victim === 0) {
-    sendPlayerDied(attacker >= 0 ? attacker : 255);
+    // Convert attacker game index to server ID
+    var killerServerId = 255;
+    if (attacker === 0) {
+      killerServerId = getLocalPlayerId();
+    } else if (attacker >= 0 && gameIndexToServerId[attacker] !== undefined) {
+      killerServerId = gameIndexToServerId[attacker];
+    }
+    sendPlayerDied(killerServerId);
+    if (player[0] && player[0].stocks <= 0) {
+      localPlayerEliminated = true;
+    }
   }
   if (attacker >= 0 && attacker < battleRoyaleKills.length) {
     battleRoyaleKills[attacker]++;
@@ -2095,63 +2159,75 @@ export function addKillFeedEntry(victim, attacker) {
 function renderVictoryScreen() {
   if (battleRoyaleWinner < 0) return;
 
-  var alpha = Math.min(brVictoryTimer / 60, 1); // fade in over 1 second
+  var isP1Winner = battleRoyaleWinner === 0;
+  var alpha = Math.min(brVictoryTimer / 60, 1);
   ui.save();
   ui.globalAlpha = alpha * 0.7;
   ui.fillStyle = "black";
   ui.fillRect(0, 0, 1200, 750);
   ui.globalAlpha = alpha;
-
   ui.textAlign = "center";
 
-  // "WINNER" text
-  ui.font = "900 100px Arial";
-  var grad = ui.createLinearGradient(400, 250, 800, 400);
-  grad.addColorStop(0, "rgb(255, 215, 0)");
-  grad.addColorStop(0.5, "rgb(255, 255, 150)");
-  grad.addColorStop(1, "rgb(255, 215, 0)");
-  ui.fillStyle = grad;
-  ui.strokeStyle = "black";
-  ui.lineWidth = 6;
-  ui.strokeText("WINNER!", 600, 320);
-  ui.fillText("WINNER!", 600, 320);
+  if (isP1Winner) {
+    // YOU WIN screen
+    ui.font = "900 100px Arial";
+    var grad = ui.createLinearGradient(400, 250, 800, 400);
+    grad.addColorStop(0, "rgb(255, 215, 0)");
+    grad.addColorStop(0.5, "rgb(255, 255, 150)");
+    grad.addColorStop(1, "rgb(255, 215, 0)");
+    ui.fillStyle = grad;
+    ui.strokeStyle = "black";
+    ui.lineWidth = 6;
+    ui.strokeText("YOU WIN!", 600, 320);
+    ui.fillText("YOU WIN!", 600, 320);
 
-  // Player info
-  var isP1 = battleRoyaleWinner === 0;
-  var charName = charNames[characterSelections[battleRoyaleWinner]] || "???";
-  var label;
-  if (battleRoyaleWinner === 255 || battleRoyaleWinner >= ports) {
-    label = "???";
-    charName = "";
-  } else if (isP1) {
-    label = "YOU";
-  } else if (networkMode && playerType[battleRoyaleWinner] === 3) {
-    label = "Player " + (battleRoyaleWinner + 1);
-  } else if (playerType[battleRoyaleWinner] === 1) {
-    label = "CPU " + (battleRoyaleWinner + 1);
+    var kos = battleRoyaleKills[0] || 0;
+    ui.font = "700 50px Arial";
+    ui.fillStyle = "white";
+    ui.strokeStyle = "black";
+    ui.lineWidth = 3;
+    ui.strokeText(kos + " KOs", 600, 420);
+    ui.fillText(kos + " KOs", 600, 420);
   } else {
-    label = "Player " + (battleRoyaleWinner + 1);
+    // Eliminated screen (you lost)
+    ui.font = "900 90px Arial";
+    ui.fillStyle = "rgb(200, 60, 60)";
+    ui.strokeStyle = "black";
+    ui.lineWidth = 6;
+    ui.strokeText("ELIMINATED", 600, 300);
+    ui.fillText("ELIMINATED", 600, 300);
+
+    // Show winner info
+    var charName = charNames[characterSelections[battleRoyaleWinner]] || "???";
+    var label;
+    if (battleRoyaleWinner === 255 || battleRoyaleWinner >= ports) {
+      label = "???";
+      charName = "";
+    } else if (networkMode && playerType[battleRoyaleWinner] === 3) {
+      label = "Player " + (battleRoyaleWinner + 1);
+    } else if (playerType[battleRoyaleWinner] === 1) {
+      label = "CPU " + (battleRoyaleWinner + 1);
+    } else {
+      label = "Player " + (battleRoyaleWinner + 1);
+    }
+
+    ui.font = "700 40px Arial";
+    ui.fillStyle = "rgb(200, 200, 200)";
+    ui.fillText("Winner: " + label + (charName ? " - " + charName : ""), 600, 390);
+
+    // Your stats
+    var p1kos = battleRoyaleKills[0] || 0;
+    ui.font = "700 35px Arial";
+    ui.fillStyle = "rgb(180, 180, 180)";
+    ui.fillText("Your KOs: " + p1kos, 600, 460);
   }
 
-  ui.font = "900 50px Arial";
-  ui.fillStyle = "white";
-  ui.strokeStyle = "black";
-  ui.lineWidth = 3;
-  ui.strokeText(label + " - " + charName, 600, 420);
-  ui.fillText(label + " - " + charName, 600, 420);
-
-  // KO count
-  var kos = battleRoyaleKills[battleRoyaleWinner] || 0;
-  ui.font = "700 35px Arial";
-  ui.fillStyle = "rgb(200, 200, 200)";
-  ui.fillText(kos + " KOs", 600, 480);
-
-  // P1 stats
-  if (!isP1) {
-    var p1kos = battleRoyaleKills[0] || 0;
-    ui.font = "700 30px Arial";
-    ui.fillStyle = "rgb(180, 180, 180)";
-    ui.fillText("Your KOs: " + p1kos, 600, 540);
+  // "Press Start to return to menu" prompt
+  if (brVictoryTimer > 120) {
+    ui.font = "700 25px Arial";
+    ui.fillStyle = "rgb(150, 150, 150)";
+    ui.globalAlpha = 0.5 + 0.5 * Math.sin(brVictoryTimer * 0.05);
+    ui.fillText("Press Start to return to menu", 600, 600);
   }
 
   ui.restore();
@@ -2183,8 +2259,8 @@ function renderBattleRoyaleHUD() {
     ui.fillStyle = "rgba(0,0,0,0.5)";
     ui.fillRect(880, yPos - 14, 310, 20);
 
-    var vName = entry.victim === 0 ? "YOU" : "CPU " + (entry.victim + 1);
-    var aName = entry.attacker === 0 ? "YOU" : entry.attacker >= 0 ? "CPU " + (entry.attacker + 1) : "???";
+    var vName = entry.victim === 0 ? "YOU" : (networkMode && playerType[entry.victim] === 3 ? "Player " : "CPU ") + (entry.victim + 1);
+    var aName = entry.attacker === 0 ? "YOU" : entry.attacker >= 0 ? ((networkMode && playerType[entry.attacker] === 3 ? "Player " : "CPU ") + (entry.attacker + 1)) : "???";
 
     ui.fillStyle = entry.victim === 0 ? "rgb(255,100,100)" : "rgb(200,200,200)";
     ui.fillText(aName + " eliminated " + vName, 1185, yPos);

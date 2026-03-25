@@ -71,6 +71,7 @@ module.exports = {
       "howler":                            path.join(stubDir, "noop.js"),
       "localforage":                       path.join(stubDir, "noop.js"),
       "pako":                              path.join(stubDir, "noop.js"),
+      "main/util/drawECB":                   path.join(stubDir, "drawECB.js"),
       "input/gamepad/retrieveGamepadInputs": path.join(stubDir, "gamepad.js"),
       "input/gamepad/findGamepadInfo":     path.join(stubDir, "gamepad.js"),
       "input/gamepad/gamepads/custom":     path.join(stubDir, "gamepad.js"),
@@ -97,13 +98,19 @@ module.exports = {
       }],
       threads: 8
     }),
+    // Replace drawECB (imported via relative path in environmentalCollision.js)
+    new webpack.NormalModuleReplacementPlugin(
+      /drawECB/,
+      path.join(stubDir, "drawECB.js")
+    ),
     // Inject browser global shims before any module code
     new webpack.BannerPlugin(
       [
         'if(typeof window==="undefined"){',
+        '  var _nctx=new Proxy({},{get:function(t,p){if(p==="canvas")return{width:1200,height:750};return typeof p==="string"?function(){return _nctx}:undefined}});',
         '  global.window=global;global.window.addEventListener=function(){};global.window.removeEventListener=function(){};',
         '  global.document={onkeydown:null,onkeyup:null,',
-        '    getElementById:function(){return{innerHTML:"",style:{},getContext:function(){return{}}}},',
+        '    getElementById:function(){return{innerHTML:"",style:{},width:1200,height:750,getContext:function(){return _nctx}}},',
         '    createElement:function(){return{style:{}}},',
         '    createElementNS:function(){return{}},',
         '    querySelectorAll:function(){return[]},',
