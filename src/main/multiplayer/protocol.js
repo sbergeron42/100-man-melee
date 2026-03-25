@@ -16,6 +16,8 @@ var OPCODES = {
   GAME_OVER:     0x0C, // S->C: winner announcement
   HOST_START:    0x0D, // C->S: host requests game start
   HIT_EVENT:     0x0E, // C->S->C: hit notification
+  GRAB_EVENT:    0x0F, // S->C: bot grabbed human player
+  GRAB_RELEASE:  0x10, // S->C: bot released/threw human player
 };
 
 var PHASES = {

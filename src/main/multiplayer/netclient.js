@@ -274,6 +274,23 @@ function handleMessage(buf) {
       }
       break;
 
+    case OP.GRAB_EVENT:
+      // Bot grabbed us! [opcode, grabberServerId, victimServerId]
+      if (buf.length >= 3) {
+        var grabberServerId = buf[1];
+        console.log('Grabbed by server player ' + grabberServerId);
+        if (callbacks.onGrabbed) callbacks.onGrabbed(grabberServerId);
+      }
+      break;
+
+    case OP.GRAB_RELEASE:
+      // Released from grab [opcode, grabberServerId, victimServerId]
+      if (buf.length >= 3) {
+        console.log('Released from grab');
+        if (callbacks.onGrabReleased) callbacks.onGrabReleased(buf[1]);
+      }
+      break;
+
     default:
       break;
   }

@@ -104,6 +104,7 @@ export const playerType = [];
 export const cpuDifficulty = [];
 
 export let ports = 0;
+export function setPorts(n) { ports = n; }
 export const activePorts = [];
 
 export let playing = false;
@@ -1185,16 +1186,30 @@ export function interpretInputs  (i, active,playertype, inputBuffer) {
 
 }
 
+// Overlay pause state for network mode (game keeps running)
+export let networkPaused = false;
+
 function interpretPause(pause0, pause1) {
   if (pause0 && !pause1) {
     if (gameMode == 3 || gameMode == 5) {
-      playing ^= true;
-      if (!playing) {
-        sounds.pause.play();
-        changeVolume(MusicManager, masterVolume[1] * 0.3, 1);
-        renderForeground();
+      if (networkMode) {
+        // In network mode, don't freeze — toggle an overlay instead
+        networkPaused = !networkPaused;
+        if (networkPaused) {
+          sounds.pause.play();
+          changeVolume(MusicManager, masterVolume[1] * 0.3, 1);
+        } else {
+          changeVolume(MusicManager, masterVolume[1], 1);
+        }
       } else {
-        changeVolume(MusicManager, masterVolume[1], 1);
+        playing ^= true;
+        if (!playing) {
+          sounds.pause.play();
+          changeVolume(MusicManager, masterVolume[1] * 0.3, 1);
+          renderForeground();
+        } else {
+          changeVolume(MusicManager, masterVolume[1], 1);
+        }
       }
     }
   }
@@ -1256,10 +1271,15 @@ export function update (i,inputBuffers){
 
 // Track previous action state for remote VFX triggers
 var remotePrevState = {};
+// Shield smoothing for remote players — hold visual for min frames to avoid flicker
+var remoteShieldTimer = {};
 
 function triggerRemoteVfx(i, prevAction, newAction) {
   var pos = player[i].phys.pos;
   var face = player[i].phys.face;
+  var charId = characterSelections[i]; // 0=marth, 1=puff, 2=fox, 3=falco, 4=falcon
+  var isMarth = charId === 0;
+  var isFoxLike = charId === 2 || charId === 3; // fox or falco
 
   // State transition VFX — trigger on entry to new state
   if (prevAction !== newAction) {
@@ -1267,6 +1287,10 @@ function triggerRemoteVfx(i, prevAction, newAction) {
       case "DASH":
       case "SMASHTURN":
         drawVfx({ name: "dashDust", pos: pos, face: face });
+        sounds.dash.play();
+        break;
+      case "KNEEBEND":
+        sounds.jump.play();
         break;
       case "LANDING":
       case "LANDINGATTACKAIRN":
@@ -1297,6 +1321,67 @@ function triggerRemoteVfx(i, prevAction, newAction) {
         sounds.kill.play();
         screenShake(500);
         break;
+      // --- Attack sounds (character-specific) ---
+      case "JAB1":
+      case "JAB2":
+      case "JAB3":
+      case "FORWARDTILT":
+      case "DOWNTILT":
+      case "UPTILT":
+      case "ATTACKDASH":
+        if (isMarth) sounds.sword1.play();
+        else sounds.normalswing2.play();
+        break;
+      case "FORWARDSMASH":
+      case "UPSMASH":
+      case "DOWNSMASH":
+        if (isMarth) sounds.sword3.play();
+        else sounds.normalswing1.play();
+        break;
+      case "ATTACKAIRN":
+      case "ATTACKAIRF":
+      case "ATTACKAIRB":
+      case "ATTACKAIRU":
+      case "ATTACKAIRD":
+        if (isMarth) sounds.sword3.play();
+        else sounds.normalswing2.play();
+        break;
+      // --- Special moves ---
+      case "DOWNSPECIALGROUND":
+      case "DOWNSPECIALAIR":
+        if (isFoxLike) {
+          sounds.foxshine.play();
+          drawVfx({ name: "shine", pos: new Vec2D(pos.x, pos.y + 6) });
+        }
+        break;
+      case "UPSPECIALCHARGE":
+      case "UPSPECIALLAUNCH":
+      case "UPSPECIAL":
+        if (isFoxLike) sounds.foxupbshout.play();
+        break;
+      case "NEUTRALSPECIALGROUND":
+      case "NEUTRALSPECIALAIR":
+        if (isMarth) sounds.sword2.play();
+        break;
+      // --- Defensive ---
+      case "ESCAPEF":
+      case "ESCAPEB":
+        sounds.roll.play();
+        break;
+      case "ESCAPEAIR":
+        sounds.airdodge.play();
+        break;
+      case "GRAB":
+        sounds.grab.play();
+        break;
+      case "GUARDON":
+      case "GUARD":
+        sounds.shieldup.play();
+        break;
+      case "DOWNBOUND":
+        drawVfx({ name: "impactLand", pos: pos, face: face });
+        sounds.bounce.play();
+        break;
       default:
         break;
     }
@@ -1305,6 +1390,30 @@ function triggerRemoteVfx(i, prevAction, newAction) {
   // Continuous VFX — trigger every N frames during certain states
   if (newAction === "DAMAGEFLYN" && player[i].timer % 10 === 0) {
     drawVfx({ name: "flyingDust", pos: pos });
+  }
+  // Fox/Falco shine loop VFX
+  if (isFoxLike && (newAction === "DOWNSPECIALGROUND" || newAction === "DOWNSPECIALAIR")) {
+    drawVfx({ name: "shineloop", pos: new Vec2D(0, 0), face: i });
+  }
+  // Marth sword trail VFX — draw per-frame during attacks
+  if (isMarth) {
+    var swingMap = {
+      "JAB1": ["JAB1", 2], "JAB2": ["JAB2", 2],
+      "FORWARDTILT": ["FORWARDTILT", 2], "UPTILT": ["UPTILT", 2], "DOWNTILT": ["DOWNTILT", 2],
+      "FORWARDSMASH": ["FORWARDSMASH", 5], "UPSMASH": ["UPSMASH", 8], "DOWNSMASH": ["DOWNSMASH1", 5],
+      "ATTACKDASH": ["DASHATTACK", 3],
+      "ATTACKAIRN": ["NAIR1", 3], "ATTACKAIRF": ["FAIR", 3], "ATTACKAIRB": ["BAIR", 3],
+      "ATTACKAIRU": ["UPAIR", 3], "ATTACKAIRD": ["DAIR", 3],
+      "UPSPECIAL": ["UPSPECIAL", 5],
+      "NEUTRALSPECIALGROUND": ["FORWARDSMASH", 3], "NEUTRALSPECIALAIR": ["FORWARDSMASH", 3],
+    };
+    var sw = swingMap[newAction];
+    if (sw) {
+      var swingFrame = Math.round(player[i].timer) - sw[1];
+      if (swingFrame >= 0) {
+        drawVfx({ name: "swing", pos: new Vec2D(0, 0), face: face, f: { pNum: i, swingType: sw[0], frame: swingFrame } });
+      }
+    }
   }
 }
 
@@ -1323,6 +1432,9 @@ function updateRemotePlayer(i) {
     buildPlayerObject(i);
     player[i].stocks = state.stocks;
   }
+  // Track previous position for VFX (sword trails)
+  player[i].phys.posPrev.x = player[i].phys.pos.x;
+  player[i].phys.posPrev.y = player[i].phys.pos.y;
   player[i].phys.pos.x = state.x;
   player[i].phys.pos.y = state.y;
   var prevAction = remotePrevState[i] || "WAIT";
@@ -1334,7 +1446,22 @@ function updateRemotePlayer(i) {
   player[i].phys.cVel.x = state.velX;
   player[i].phys.cVel.y = state.velY;
   player[i].phys.grounded = state.grounded;
-  player[i].phys.shielding = state.shielding;
+  // Shield smoothing: hold visual for minimum frames to prevent network flicker
+  if (state.shielding) {
+    remoteShieldTimer[i] = 8; // hold shield visual for at least 8 frames
+  } else if (remoteShieldTimer[i] > 0) {
+    remoteShieldTimer[i]--;
+  }
+  player[i].phys.shielding = (remoteShieldTimer[i] || 0) > 0;
+  // Always update shield bubble properties so render.js can draw
+  var shieldOff = player[i].charAttributes ? player[i].charAttributes.shieldOffset : [0, 40];
+  player[i].phys.shieldAnalog = 1;
+  player[i].phys.shieldHP = 60;
+  var shieldScale = player[i].charAttributes ? player[i].charAttributes.shieldScale : 1.3;
+  var modelScale = player[i].charAttributes ? player[i].charAttributes.modelScale : 1;
+  player[i].phys.shieldSize = shieldScale * 0.575 * modelScale + 2;
+  player[i].phys.shieldPositionReal.x = state.x + (shieldOff[0] * state.face / 4.5);
+  player[i].phys.shieldPositionReal.y = state.y + (shieldOff[1] / 4.5);
   // Trigger VFX based on state transitions
   triggerRemoteVfx(i, prevAction, state.actionState);
   remotePrevState[i] = state.actionState;
@@ -1665,6 +1792,26 @@ export function renderTick (){
 
       // Render UI overlay (not camera-transformed)
       renderOverlay(true);
+
+      // Network pause overlay (game keeps running behind it)
+      if (networkPaused) {
+        ui.save();
+        ui.globalAlpha = 0.4;
+        ui.fillStyle = "black";
+        ui.fillRect(0, 0, 1200, 750);
+        ui.globalAlpha = 1;
+        ui.textAlign = "center";
+        ui.font = "900 72px Arial";
+        ui.fillStyle = "white";
+        ui.strokeStyle = "black";
+        ui.lineWidth = 5;
+        ui.strokeText("PAUSED", 600, 360);
+        ui.fillText("PAUSED", 600, 360);
+        ui.font = "700 24px Arial";
+        ui.fillStyle = "rgb(180, 180, 180)";
+        ui.fillText("Press Start to resume", 600, 400);
+        ui.restore();
+      }
 
       // Render minimap
       if (cameraEnabled && ports > 4) {
@@ -2002,6 +2149,46 @@ export function startOnlineBattleRoyale(serverUrl) {
     // Screen shake and percent shake
     screenShake(knockback);
     percentShake(knockback, 0);
+  };
+
+  // Dummy input buffer for action state inits triggered by network events
+  var grabInputBuffer = [];
+  for (var gib = 0; gib < 100; gib++) grabInputBuffer.push(nullInputs());
+
+  netCallbacks.onGrabbed = function(grabberServerId) {
+    if (!player[0] || player[0].stocks <= 0) return;
+    var grabberGameIndex = serverIdToGameIndex[grabberServerId];
+    if (grabberGameIndex === undefined || !player[grabberGameIndex]) return;
+
+    // Enter grabbed state — face opposite of grabber
+    player[0].phys.face = -1 * player[grabberGameIndex].phys.face;
+    player[0].phys.cVel.x = 0;
+    player[0].phys.cVel.y = 0;
+    player[0].phys.kVel.x = 0;
+    player[0].phys.kVel.y = 0;
+    player[0].phys.grabbedBy = grabberGameIndex;
+    player[0].phys.grounded = true;
+    player[0].phys.shielding = false;
+
+    // Position next to grabber
+    player[0].phys.pos.x = player[grabberGameIndex].phys.pos.x + (-16.41 * player[0].phys.face);
+    player[0].phys.pos.y = player[grabberGameIndex].phys.pos.y;
+
+    // Enter capture wait state
+    player[0].phys.stuckTimer = 100 + (2 * player[0].percent);
+    actionStates[characterSelections[0]].CAPTUREWAIT.init(0, grabInputBuffer);
+
+    sounds.grabbed.play();
+    drawVfx({ name: "tech", pos: new Vec2D(player[0].phys.pos.x, player[0].phys.pos.y + 10) });
+  };
+
+  netCallbacks.onGrabReleased = function(grabberServerId) {
+    if (!player[0]) return;
+    player[0].phys.grabbedBy = -1;
+    // If still in a grab state, return to neutral
+    if (player[0].actionState === "CAPTUREWAIT" || player[0].actionState === "CAPTUREPULLED") {
+      actionStates[characterSelections[0]].WAIT.init(0, grabInputBuffer);
+    }
   };
 
   // Connect to server

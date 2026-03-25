@@ -103,6 +103,11 @@ module.exports = {
       /drawECB/,
       path.join(stubDir, "drawECB.js")
     ),
+    // Replace drawVfx (imported via relative path in character move files)
+    new webpack.NormalModuleReplacementPlugin(
+      /drawVfx/,
+      path.join(stubDir, "vfxAll.js")
+    ),
     // Inject browser global shims before any module code
     new webpack.BannerPlugin(
       [

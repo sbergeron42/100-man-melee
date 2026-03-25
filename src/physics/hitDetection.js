@@ -236,7 +236,7 @@ export function interpolatedHitHitCollision(i,p,j,k) {
                         , player[p].phys.pos.y +  player[p].hitboxes.id[j].offset[player[p].hitboxes.frame].y );
   const h1i = new Vec2D ( player[i].phys.posPrev.x + (player[i].phys.prevFrameHitboxes.id[k].offset[player[i].phys.prevFrameHitboxes.frame].x * player[i].phys.facePrev)
                         , player[i].phys.posPrev.y +  player[i].phys.prevFrameHitboxes.id[k].offset[player[i].phys.prevFrameHitboxes.frame].y );
-  const h2i = new Vec2D ( player[i].phys.pos.x + (player[i].hitboxes.id[k].offset[player[i].hitboxes.frame].x * player[p].phys.face)
+  const h2i = new Vec2D ( player[i].phys.pos.x + (player[i].hitboxes.id[k].offset[player[i].hitboxes.frame].x * player[i].phys.face)
                         , player[i].phys.pos.y +  player[i].hitboxes.id[k].offset[player[i].hitboxes.frame].y );
   const r = player[p].hitboxes.id[j].size;
   const s = player[i].hitboxes.id[k].size;

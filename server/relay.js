@@ -216,6 +216,10 @@ wss.on('connection', function(ws) {
     room.players.delete(ws);
     room.playerById[id] = null;
     info.alive = false;
+    // Remove ghost from headless engine
+    if (botRunner) {
+      try { botRunner.removeHumanGhost(id); } catch(e) {}
+    }
 
     // Broadcast player left
     var left = new Uint8Array(3);
@@ -356,11 +360,127 @@ function startGame() {
     }
     console.log('Spawned ' + botCount + ' server-side AI bots');
 
+    // Register human players as ghosts in headless engine so bots can hit them
+    if (botRunner) {
+      room.players.forEach(function(info) {
+        botRunner.addHumanGhost(info.id);
+      });
+    }
+
+    // Blastzone shrink state (mirrors client logic)
+    var bzOriginal = botRunner.getBlastzone();
+    var bzTickCount = 0;
+    var bzShrinkInterval = 3600; // 60fps * 60s = 1 minute
+    var bzShrinkCount = 0;
+
     // Start bot simulation at 60hz
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(function() {
       if (room.phase !== PHASES.PLAYING || !botRunner) return;
-      try { botRunner.tick(); } catch(e) { /* headless physics error — non-fatal */ }
+
+      // Blastzone shrink (same schedule as client)
+      if (bzOriginal) {
+        bzTickCount++;
+        if (bzTickCount >= bzShrinkInterval) {
+          bzTickCount = 0;
+          bzShrinkCount++;
+          var origW = bzOriginal.maxX - bzOriginal.minX;
+          var origH = bzOriginal.maxY - bzOriginal.minY;
+          var phase1End = 2, phase1TargetW = 650;
+          var phase1TargetH = origH * (phase1TargetW / origW);
+          var phase2Rate = 50, minWidth = 200, minHeight = 120;
+          var minutes = bzShrinkCount;
+          var targetW, targetH;
+          if (minutes <= phase1End) {
+            var t = minutes / phase1End;
+            targetW = origW - t * (origW - phase1TargetW);
+            targetH = origH - t * (origH - phase1TargetH);
+          } else {
+            var extraMinutes = minutes - phase1End;
+            targetW = phase1TargetW - extraMinutes * phase2Rate;
+            targetH = phase1TargetH - extraMinutes * (phase2Rate * origH / origW);
+          }
+          targetW = Math.max(targetW, minWidth);
+          targetH = Math.max(targetH, minHeight);
+          var cx = (bzOriginal.minX + bzOriginal.maxX) / 2;
+          var cy = (bzOriginal.minY + bzOriginal.maxY) / 2;
+          botRunner.setBlastzone(cx - targetW/2, cy - targetH/2, cx + targetW/2, cy + targetH/2);
+          console.log('Headless blastzone shrink #' + bzShrinkCount + ': ' + Math.round(targetW) + 'x' + Math.round(targetH));
+        }
+      }
+
+      // Feed human positions into headless engine
+      room.players.forEach(function(info) {
+        if (!info.alive) return;
+        var decoded = protocol.decodePlayerState(info.state, 0);
+        botRunner.updateHumanGhost(info.id, decoded);
+      });
+
+      try { botRunner.tick(); } catch(e) { if (!e._logged) { console.error('Headless tick error:', e.message, e.stack && e.stack.split('\n')[1]); e._logged = true; } }
+
+      // Relay bot-to-human hits as HIT_EVENTs
+      var humanHits = botRunner.getHumanHits();
+      for (var hi = 0; hi < humanHits.length; hi++) {
+        var hit = humanHits[hi];
+        var victimInfo = room.playerById[hit.victimServerId];
+        if (victimInfo && victimInfo.ws && victimInfo.ws.readyState === 1) {
+          // Build HIT_EVENT: [opcode, victimId, dmg_hi, dmg_lo, kb_hi, kb_lo, angle_hi, angle_lo, attackerId]
+          var hitBuf = new Uint8Array(9);
+          hitBuf[0] = OP.HIT_EVENT;
+          hitBuf[1] = hit.victimServerId;
+          hitBuf[2] = (hit.damage >> 8) & 0xFF;
+          hitBuf[3] = hit.damage & 0xFF;
+          hitBuf[4] = (hit.knockback >> 8) & 0xFF;
+          hitBuf[5] = hit.knockback & 0xFF;
+          hitBuf[6] = (hit.angle >> 8) & 0xFF;
+          hitBuf[7] = hit.angle & 0xFF;
+          // Find bot's server ID
+          var attackerServerId = 255;
+          if (hit.attackerBotIndex < botPlayerInfos.length) {
+            attackerServerId = botPlayerInfos[hit.attackerBotIndex].id;
+          }
+          hitBuf[8] = attackerServerId;
+          victimInfo.ws.send(hitBuf);
+        }
+      }
+
+      // Relay grab events to human clients
+      var grabEvents = botRunner.getGrabEvents();
+      for (var ge = 0; ge < grabEvents.length; ge++) {
+        var grab = grabEvents[ge];
+        var gVictimInfo = room.playerById[grab.victimServerId];
+        if (gVictimInfo && gVictimInfo.ws && gVictimInfo.ws.readyState === 1) {
+          var grabBuf = new Uint8Array(3);
+          grabBuf[0] = OP.GRAB_EVENT;
+          // Find grabber's server ID
+          var grabberServerId = 255;
+          if (grab.attackerBotIndex < botPlayerInfos.length) {
+            grabberServerId = botPlayerInfos[grab.attackerBotIndex].id;
+          }
+          grabBuf[1] = grabberServerId;
+          grabBuf[2] = grab.victimServerId;
+          gVictimInfo.ws.send(grabBuf);
+        }
+      }
+
+      // Relay grab release events
+      var releaseEvents = botRunner.getGrabReleaseEvents();
+      for (var re = 0; re < releaseEvents.length; re++) {
+        var rel = releaseEvents[re];
+        var rVictimInfo = room.playerById[rel.victimServerId];
+        if (rVictimInfo && rVictimInfo.ws && rVictimInfo.ws.readyState === 1) {
+          var relBuf = new Uint8Array(3);
+          relBuf[0] = OP.GRAB_RELEASE;
+          var relAttackerServerId = 255;
+          if (rel.attackerBotIndex < botPlayerInfos.length) {
+            relAttackerServerId = botPlayerInfos[rel.attackerBotIndex].id;
+          }
+          relBuf[1] = relAttackerServerId;
+          relBuf[2] = rel.victimServerId;
+          rVictimInfo.ws.send(relBuf);
+        }
+      }
+
       // Update bot state buffers for world broadcast
       for (var bi2 = 0; bi2 < botPlayerInfos.length; bi2++) {
         if (!botPlayerInfos[bi2].alive) continue;
