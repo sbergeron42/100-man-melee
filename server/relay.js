@@ -363,7 +363,7 @@ function startGame() {
     // Register human players as ghosts in headless engine so bots can hit them
     if (botRunner) {
       room.players.forEach(function(info) {
-        botRunner.addHumanGhost(info.id);
+        botRunner.addHumanGhost(info.id, info.character);
       });
     }
 

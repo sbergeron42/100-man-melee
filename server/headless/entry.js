@@ -258,13 +258,19 @@ export function createBotRunner(config) {
             var victimPercent = player[victim].percent || 0;
             var weight = 100; // approximate
             var kb = hitbox.bk + Math.floor(((14 * (dmg + victimPercent) / (weight + 100)) + 18) * (hitbox.kg / 100) + dmg * 0.1);
+            var isThrow = hitQueue[hq][4] || false;
             pendingHumanHits.push({
               victimServerId: ghostServerIds[victim],
               damage: Math.round(dmg),
               knockback: Math.min(kb, 65535),
               angle: Math.round(kbAngle),
-              attackerBotIndex: attacker
+              attackerBotIndex: attacker,
+              isThrow: isThrow
             });
+            // After a throw hit, reset the ghost's grab state so it can be grabbed again
+            if (isThrow) {
+              player[victim].phys.grabbedBy = -1;
+            }
           }
         } else {
           botOnlyQueue.push(hitQueue[hq]);
@@ -291,6 +297,14 @@ export function createBotRunner(config) {
           var grabber = player[gIdx].phys.grabbedBy;
           activeGrabs[gIdx] = { attackerBotIndex: grabber, victimServerId: parseInt(gi) };
           pendingGrabs.push({ victimServerId: parseInt(gi), attackerBotIndex: grabber });
+          // Ghost can't run physics, so manually fast-forward the grab:
+          // Put ghost into CAPTUREWAIT and bot into CATCHWAIT
+          player[gIdx].actionState = "CAPTUREWAIT";
+          player[gIdx].timer = 0;
+          player[gIdx].phys.stuckTimer = 100 + (2 * (player[gIdx].percent || 0));
+          try {
+            actionStates[characterSelections[grabber]].CATCHWAIT.init(grabber, inputBuffers);
+          } catch(e) {}
         } else if (!isGrabbed && wasGrabbed) {
           pendingGrabReleases.push(activeGrabs[gIdx]);
           delete activeGrabs[gIdx];
@@ -353,11 +367,11 @@ export function createBotRunner(config) {
       return { lsX: inp.lsX, lsY: inp.lsY, a: inp.a, b: inp.b };
     },
     // --- Ghost human management ---
-    addHumanGhost: function(serverId) {
+    addHumanGhost: function(serverId, charId) {
       var idx = botCount + Object.keys(ghostSlots).length;
       ensurePlayerSlot(idx);
       playerType[idx] = 2; // type 2 = network/ghost (valid for hitDetect: > -1)
-      characterSelections[idx] = 0;
+      characterSelections[idx] = charId || 0;
       // Build a minimal player object
       buildPlayerObject(idx);
       player[idx].phys.grounded = true;
