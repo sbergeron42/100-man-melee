@@ -18,6 +18,36 @@ let baseOffsetY = 480;
 
 export let cameraEnabled = false;
 
+// Spectator mode: follow a different player when eliminated
+let spectateTarget = 0;
+export function getSpectateTarget() { return spectateTarget; }
+
+export function spectateNext() {
+  var start = spectateTarget;
+  for (var n = 1; n < ports; n++) {
+    var idx = (start + n) % ports;
+    if (playerType[idx] > -1 && player[idx] && player[idx].stocks > 0) {
+      spectateTarget = idx;
+      return;
+    }
+  }
+}
+
+export function spectatePrev() {
+  var start = spectateTarget;
+  for (var n = 1; n < ports; n++) {
+    var idx = (start - n + ports) % ports;
+    if (playerType[idx] > -1 && player[idx] && player[idx].stocks > 0) {
+      spectateTarget = idx;
+      return;
+    }
+  }
+}
+
+export function resetSpectate() {
+  spectateTarget = 0;
+}
+
 export function enableCamera() {
   cameraEnabled = true;
 }
@@ -31,13 +61,15 @@ export function disableCamera() {
 window.enableCamera = enableCamera;
 window.disableCamera = disableCamera;
 
-export function updateCamera() {
+export function updateCamera(isEliminated) {
   if (!cameraEnabled) return;
-  if (!player[0] || !player[0].phys) return;
 
-  // Target is P1's position
-  targetX = player[0].phys.pos.x;
-  targetY = player[0].phys.pos.y;
+  // Follow spectate target when eliminated, otherwise follow P1
+  var followIdx = (isEliminated && spectateTarget > 0) ? spectateTarget : 0;
+  if (!player[followIdx] || !player[followIdx].phys) return;
+
+  targetX = player[followIdx].phys.pos.x;
+  targetY = player[followIdx].phys.pos.y;
 
   // Smooth follow
   cameraX += (targetX - cameraX) * LERP;

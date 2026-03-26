@@ -14,9 +14,12 @@ import {
 	gameMode,
     startTimer,
      holiday,
-    ports
+    ports,
+    networkMode,
+    battleRoyaleMode,
+    localPlayerEliminated
 } from "main/main";
-import {cameraEnabled} from "main/camera";
+import {cameraEnabled, getSpectateTarget} from "main/camera";
 import {gameSettings} from "settings";
 import {makeColour} from "main/vfx/makeColour";
 import {actionStates} from "physics/actionStateShortcuts";
@@ -272,6 +275,19 @@ export function renderPlayer(i) {
         fg2.fill();
         fg2.textAlign = "start";
     }
+    // Floating percent tag above other players in network BR mode
+    if (networkMode && battleRoyaleMode && i !== 0 && player[i].stocks > 0) {
+        var pct = Math.floor(player[i].percent);
+        var tagY = temY - 40 * (activeStage.scale / 4.5);
+        fg2.font = "bold 22px Arial";
+        fg2.textAlign = "center";
+        fg2.fillStyle = "rgb(255," + Math.max(255 - pct, 0) + "," + Math.max(255 - pct, 0) + ")";
+        fg2.strokeStyle = "black";
+        fg2.lineWidth = 3;
+        fg2.strokeText(pct + "%", temX, tagY);
+        fg2.fillText(pct + "%", temX, tagY);
+        fg2.textAlign = "start";
+    }
     if (player[i].actionState == "REBIRTH" || player[i].actionState == "REBIRTHWAIT") {
         fg2.fillStyle = pal(i)[1];
         fg2.strokeStyle = pal(i)[0];
@@ -417,33 +433,72 @@ export function renderOverlay(showStock) {
         ui.strokeText(((sec.length < 5) ? sec[2] + sec[3] : sec[3] + sec[4]), 670, 70);
     }
     if (showStock) {
-        ui.font = "900 53px Arial";
-        ui.lineWidth = (holiday == 1) ? 3 : 2;
-        ui.textAlign = "end";
-        ui.save();
-        ui.scale(0.8, 1);
-        // Only show HUD for first 4 players (or fewer)
-        var hudCount = Math.min(ports, 4);
-        for (var i = 0; i < hudCount; i++) {
-            if (playerType[i] > -1) {
-                ui.fillStyle = "rgb(255," + Math.max(255 - player[i].percent, 0) + ", " + Math.max(255 - player[i].percent, 0) +
-                    ")";
-                ui.fillText(Math.floor(player[i].percent) + "%", (450 + i * 145 + player[i].percentShake.x) * 1.25, 670 +
-                    player[i].percentShake.y);
-                ui.strokeText(Math.floor(player[i].percent) + "%", (450 + i * 145 + player[i].percentShake.x) * 1.25, 670 +
-                    player[i].percentShake.y);
+        var isBRNetwork = networkMode && battleRoyaleMode;
+        if (isBRNetwork) {
+            // Network BR: show P1 percent, or spectated player's percent when eliminated
+            var hudIdx = 0;
+            var specTarget = getSpectateTarget();
+            if (localPlayerEliminated && specTarget > 0) {
+                hudIdx = specTarget;
             }
-        }
-        ui.restore();
-        for (var i = 0; i < hudCount; i++) {
-            if (playerType[i] > -1) {
-                ui.fillStyle = palettes[pPal[i] % palettes.length][0];
-                for (var j = 0; j < player[i].stocks; j++) {
+            ui.textAlign = "center";
+            ui.strokeStyle = "black";
+            if (localPlayerEliminated && specTarget > 0 && player[hudIdx]) {
+                // Spectating: show player tag
+                ui.font = "900 40px Arial";
+                ui.lineWidth = 3;
+                ui.fillStyle = palettes[(pPal[hudIdx] || hudIdx) % palettes.length][0];
+                ui.strokeText("P" + (hudIdx + 1), 600, 665);
+                ui.fillText("P" + (hudIdx + 1), 600, 665);
+            } else if (player[hudIdx]) {
+                // Playing: show own percent
+                var hudPct = player[hudIdx].percent || 0;
+                ui.font = "900 53px Arial";
+                ui.lineWidth = 2;
+                ui.fillStyle = "rgb(255," + Math.max(255 - hudPct, 0) + ", " + Math.max(255 - hudPct, 0) + ")";
+                var pctX = 600 + (player[hudIdx].percentShake ? player[hudIdx].percentShake.x : 0);
+                var pctY = 670 + (player[hudIdx].percentShake ? player[hudIdx].percentShake.y : 0);
+                ui.fillText(Math.floor(hudPct) + "%", pctX, pctY);
+                ui.strokeText(Math.floor(hudPct) + "%", pctX, pctY);
+                // P1 stock dot
+                ui.fillStyle = palettes[pPal[0] % palettes.length][0];
+                for (var j = 0; j < player[0].stocks; j++) {
                     ui.beginPath();
-                    ui.arc(337 + i * 145 + j * 30, 600, 12, 0, twoPi);
+                    ui.arc(570 + j * 30, 600, 12, 0, twoPi);
                     ui.closePath();
                     ui.fill();
                     ui.stroke();
+                }
+            }
+        } else {
+            ui.font = "900 53px Arial";
+            ui.lineWidth = (holiday == 1) ? 3 : 2;
+            ui.textAlign = "end";
+            ui.save();
+            ui.scale(0.8, 1);
+            // Only show HUD for first 4 players (or fewer)
+            var hudCount = Math.min(ports, 4);
+            for (var i = 0; i < hudCount; i++) {
+                if (playerType[i] > -1) {
+                    ui.fillStyle = "rgb(255," + Math.max(255 - player[i].percent, 0) + ", " + Math.max(255 - player[i].percent, 0) +
+                        ")";
+                    ui.fillText(Math.floor(player[i].percent) + "%", (450 + i * 145 + player[i].percentShake.x) * 1.25, 670 +
+                        player[i].percentShake.y);
+                    ui.strokeText(Math.floor(player[i].percent) + "%", (450 + i * 145 + player[i].percentShake.x) * 1.25, 670 +
+                        player[i].percentShake.y);
+                }
+            }
+            ui.restore();
+            for (var i = 0; i < hudCount; i++) {
+                if (playerType[i] > -1) {
+                    ui.fillStyle = palettes[pPal[i] % palettes.length][0];
+                    for (var j = 0; j < player[i].stocks; j++) {
+                        ui.beginPath();
+                        ui.arc(337 + i * 145 + j * 30, 600, 12, 0, twoPi);
+                        ui.closePath();
+                        ui.fill();
+                        ui.stroke();
+                    }
                 }
             }
         }

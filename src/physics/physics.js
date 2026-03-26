@@ -1,5 +1,8 @@
 //@flow
 
+var onDeathCallback = null;
+export function setDeathCallback(cb) { onDeathCallback = cb; }
+
 import {
   player,
   characterSelections,
@@ -994,6 +997,12 @@ function dealWithDeath(i: number, input: any): void {
       state = "DEADUP";
     }
     if (state !== 0) {
+      if (onDeathCallback) {
+        onDeathCallback(i, state, player[i].phys.pos.x, player[i].phys.pos.y,
+          activeStage.blastzone.min.x, activeStage.blastzone.min.y,
+          activeStage.blastzone.max.x, activeStage.blastzone.max.y,
+          player[i].phys.kVel.x, player[i].phys.kVel.y);
+      }
       player[i].phys.outOfCameraTimer = 0;
       turnOffHitboxes(i);
       player[i].stocks--;

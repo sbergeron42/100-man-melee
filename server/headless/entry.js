@@ -45,7 +45,7 @@ import 'main/util/deepCopyObject.js';
 
 // Load core systems
 import {actionStates} from 'physics/actionStateShortcuts';
-import {physics, rebuildLedgeCache} from 'physics/physics';
+import {physics, rebuildLedgeCache, setDeathCallback} from 'physics/physics';
 import {executeHits, hitDetect, checkPhantoms, resetHitQueue, rebuildSpatialGrid, hitQueue} from 'physics/hitDetection';
 import {Box2D} from 'main/util/Box2D';
 import {destroyArticles, executeArticles, articlesHitDetection, executeArticleHits, resetAArticles} from 'physics/article';
@@ -139,18 +139,27 @@ export function createBotRunner(config) {
   for (var j = 0; j < botCount; j++) {
     buildPlayerObject(j);
     player[j].phys.face = startingFace[j] || 1;
-    player[j].actionState = "WAIT";
+    player[j].actionState = "ENTRANCE";
     player[j].timer = 0;
     player[j].stocks = 1;
     player[j].difficulty = 4; // max vanilla CPU level
     player[j].inCSS = false;
-    player[j].phys.grounded = true;
-    // Place on stage ground (y=0 for mega battlefield)
-    player[j].phys.pos.y = 0.001;
+    player[j].phys.grounded = false;
+    // Place above spawn point so they fall in with entrance animation
+    player[j].phys.pos.y = (startingPoint[j] ? startingPoint[j][1] : 0) + 30;
   }
 
   // Tell the engine how many players exist (hitDetect, AI, spatial grid all loop over ports)
   setPorts(botCount);
+
+  // Log all deaths with position and blastzone info
+  setDeathCallback(function(idx, state, px, py, bzMinX, bzMinY, bzMaxX, bzMaxY, kvx, kvy) {
+    var isGhost = ghostServerIds[idx] !== undefined;
+    var label = isGhost ? 'Ghost' : 'Bot';
+    console.log(label + ' ' + idx + ' ' + state + ' pos=(' + px.toFixed(1) + ',' + py.toFixed(1) +
+      ') bz=[' + bzMinX.toFixed(0) + ',' + bzMinY.toFixed(0) + ']-[' + bzMaxX.toFixed(0) + ',' + bzMaxY.toFixed(0) +
+      '] kVel=(' + kvx.toFixed(1) + ',' + kvy.toFixed(1) + ')');
+  });
 
   // Set game state so AI and physics work correctly
   // Use setGameMode instead of changeGamemode to avoid rendering side effects
@@ -447,6 +456,19 @@ export function createBotRunner(config) {
       var releases = pendingGrabReleases;
       pendingGrabReleases = [];
       return releases;
+    },
+
+    getLastHitBy: function(index) {
+      if (!player[index]) return -1;
+      return player[index].phys.lastHitBy !== undefined ? player[index].phys.lastHitBy : -1;
+    },
+
+    // Convert headless player index to a type + identifier for the relay server
+    getPlayerInfo: function(index) {
+      if (index < 0) return { type: 'none', id: -1 };
+      if (index < botCount) return { type: 'bot', id: index };
+      if (ghostServerIds[index] !== undefined) return { type: 'human', serverId: ghostServerIds[index] };
+      return { type: 'none', id: -1 };
     },
 
     setBlastzone: function(minX, minY, maxX, maxY) {

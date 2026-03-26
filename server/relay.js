@@ -229,6 +229,12 @@ wss.on('connection', function(ws) {
     broadcast(left);
 
     if (room.phase === PHASES.PLAYING) {
+      // If all humans left, reset for a new lobby
+      if (room.players.size === 0) {
+        console.log('All humans disconnected during game, resetting room');
+        resetRoom();
+        return;
+      }
       room.aliveCount = countAlive();
       updateBroadcastRate();
       if (room.aliveCount <= 1) {
@@ -492,7 +498,26 @@ function startGame() {
           botPlayerInfos[bi2].alive = false;
           room.aliveCount = countAlive();
           updateBroadcastRate();
-          console.log('Bot ' + botPlayerInfos[bi2].id + ' eliminated. Alive: ' + room.aliveCount);
+
+          // Broadcast KILL_FEED for bot death (same as human deaths)
+          var botKilledBy = 255;
+          var lastHitByIdx = botRunner.getLastHitBy(bi2);
+          if (lastHitByIdx >= 0) {
+            var killerInfo = botRunner.getPlayerInfo(lastHitByIdx);
+            if (killerInfo.type === 'bot' && killerInfo.id < botPlayerInfos.length) {
+              botKilledBy = botPlayerInfos[killerInfo.id].id;
+            } else if (killerInfo.type === 'human') {
+              botKilledBy = killerInfo.serverId;
+            }
+          }
+          var kf = new Uint8Array(4);
+          kf[0] = OP.KILL_FEED;
+          kf[1] = botPlayerInfos[bi2].id;
+          kf[2] = botKilledBy;
+          kf[3] = room.aliveCount;
+          broadcastAll(kf);
+
+          console.log('Bot ' + botPlayerInfos[bi2].id + ' eliminated by ' + botKilledBy + '. Alive: ' + room.aliveCount);
           if (room.aliveCount <= 1) endGame();
         }
       }

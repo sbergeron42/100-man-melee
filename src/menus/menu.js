@@ -14,13 +14,13 @@ import {runCalibration} from "../input/gamepad/gamepadCalibration";
 let menuSelected = 0;
 
 const menuText = [
-  ["100-Man Melee", "Online Melee", "VS. Melee", "Options"],
+  ["Online Melee", "100-Man Melee", "VS. Melee", "Options"],
   ["Audio", "Gameplay", "Keyboard Controls", "Credits"],
   ["Local VS", "Spectate", "P2P", "Server"],
   ["Controller", "Keyboard"]
 ];
 const menuExplanation = [
-  ["100 Player Battle Royale!", "Online Battle Royale!", "Multiplayer Battles!", "Game setup."],
+  ["Online Battle Royale!", "100 Player Battle Royale!", "Multiplayer Battles!", "Game setup."],
   ["Select audio levels.", "Change gameplay settings.", "Customize & calibrate controls.", "Who did this?"],
   ["One box this screen.", "Ranked Mode", "Hostless Muliplayer", "Hosted Multiplayer"],
   ["Customize & calibrate controller.", "Customize keyboard controls."]
@@ -43,8 +43,8 @@ const SECONDLEVELOPTIONS = 1;
 const MPMENU = 2;
 const CONTROLLERCALIB = 3;
 //top level
-const BATTLEROYALE = 0;
-const ONLINEMELEE = 1;
+const ONLINEMELEE = 0;
+const BATTLEROYALE = 1;
 const VSMODE = 2;
 const OPTIONS = 3;
 //second level

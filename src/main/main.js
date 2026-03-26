@@ -41,7 +41,7 @@ import {updateGamepadSVGState, updateGamepadSVGColour, setGamepadSVGColour, cycl
 import {deepCopy} from "./util/deepCopy";
 import {deepObjectMerge} from "./util/deepCopyObject";
 import {setTokenPosSnapToChar} from "../menus/css";
-import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera} from "./camera";
+import {updateCamera, applyCameraTransform, restoreCameraTransform, isOnScreen, cameraEnabled, enableCamera, disableCamera, spectateNext, spectatePrev, getSpectateTarget, resetSpectate} from "./camera";
 import {connectToServer, disconnectFromServer, isConnected, getLocalPlayerId, getIsHost, getGamePhase, getAliveCount as getNetAliveCount, getRemoteStates, getInterpolatedState, sendPlayerState, sendCharacterSelect, sendHostStart, sendPlayerDied, sendHitEvent, getRoomPlayerCount, getRemoteCharacter, callbacks as netCallbacks} from "./multiplayer/netclient";
 /*globals performance*/
 
@@ -1088,7 +1088,7 @@ export function interpretInputs  (i, active,playertype, inputBuffer) {
       }
     }
 
-    interpretPause(pause[i][0], pause[i][1]);
+    interpretPause(pause[i][0], pause[i][1], tempBuffer[0]);
   }
   else if (mType[i] !== null) { // gamepad controls
 
@@ -1124,7 +1124,7 @@ export function interpretInputs  (i, active,playertype, inputBuffer) {
       controllerResetCountdowns[i] = 125;
     }
 
-    interpretPause(pause[i][0], pause[i][1]);
+    interpretPause(pause[i][0], pause[i][1], tempBuffer[0]);
   }
   else { // AI
     tempBuffer[0].rawX = tempBuffer[0].lsX;
@@ -1189,10 +1189,18 @@ export function interpretInputs  (i, active,playertype, inputBuffer) {
 // Overlay pause state for network mode (game keeps running)
 export let networkPaused = false;
 
-function interpretPause(pause0, pause1) {
+function interpretPause(pause0, pause1, currentInput) {
   if (pause0 && !pause1) {
     if (gameMode == 3 || gameMode == 5) {
       if (networkMode) {
+        // Check L+R+A+Start exit combo while paused
+        if (networkPaused && currentInput && currentInput.a && currentInput.l && currentInput.r) {
+          networkPaused = false;
+          changeVolume(MusicManager, masterVolume[1], 1);
+          disconnectFromServer();
+          endGame([]);
+          return;
+        }
         // In network mode, don't freeze — toggle an overlay instead
         networkPaused = !networkPaused;
         if (networkPaused) {
@@ -1355,9 +1363,11 @@ function triggerRemoteVfx(i, prevAction, newAction) {
         }
         break;
       case "UPSPECIALCHARGE":
+        if (isFoxLike) sounds.foxupbburn.play();
+        break;
       case "UPSPECIALLAUNCH":
       case "UPSPECIAL":
-        if (isFoxLike) sounds.foxupbshout.play();
+        if (isFoxLike) sounds.foxupblaunch.play();
         break;
       case "NEUTRALSPECIALGROUND":
       case "NEUTRALSPECIALAIR":
@@ -1748,7 +1758,7 @@ export function renderTick (){
       console.log(delta);*/
       //console.log("test2");
       var rStart = performance.now();
-      updateCamera();
+      updateCamera(localPlayerEliminated);
       clearScreen();
 
       // Apply camera transform to dynamic layers
@@ -1805,11 +1815,14 @@ export function renderTick (){
         ui.fillStyle = "white";
         ui.strokeStyle = "black";
         ui.lineWidth = 5;
-        ui.strokeText("PAUSED", 600, 360);
-        ui.fillText("PAUSED", 600, 360);
+        ui.strokeText("PAUSED", 600, 340);
+        ui.fillText("PAUSED", 600, 340);
         ui.font = "700 24px Arial";
         ui.fillStyle = "rgb(180, 180, 180)";
-        ui.fillText("Press Start to resume", 600, 400);
+        ui.fillText("Press Start to resume", 600, 380);
+        ui.font = "700 20px Arial";
+        ui.fillStyle = "rgb(140, 140, 140)";
+        ui.fillText("L + R + A + Start to exit", 600, 415);
         ui.restore();
       }
 
@@ -1842,20 +1855,74 @@ export function renderTick (){
       // Eliminated overlay (local player dead, game still going)
       if (battleRoyaleMode && localPlayerEliminated && battleRoyaleWinner < 0) {
         ui.save();
+        // Dark overlay behind header
         ui.globalAlpha = 0.5;
         ui.fillStyle = "black";
-        ui.fillRect(0, 0, 1200, 100);
+        ui.fillRect(0, 0, 1200, 120);
         ui.globalAlpha = 1;
         ui.textAlign = "center";
         ui.font = "900 60px Arial";
         ui.fillStyle = "rgb(200, 60, 60)";
         ui.strokeStyle = "black";
         ui.lineWidth = 4;
-        ui.strokeText("ELIMINATED", 600, 65);
-        ui.fillText("ELIMINATED", 600, 65);
-        ui.font = "700 22px Arial";
+        ui.strokeText("ELIMINATED", 600, 55);
+        ui.fillText("ELIMINATED", 600, 55);
+        // Show placement rank
+        var rankStr = localPlayerRank + getOrdinalSuffix(localPlayerRank) + " / " + brTotalPlayers;
+        ui.font = "700 28px Arial";
+        ui.fillStyle = "rgb(255, 200, 80)";
+        ui.strokeStyle = "black";
+        ui.lineWidth = 3;
+        ui.strokeText(rankStr, 600, 88);
+        ui.fillText(rankStr, 600, 88);
+        ui.font = "700 18px Arial";
         ui.fillStyle = "rgb(180, 180, 180)";
-        ui.fillText("Press Start to return to menu", 600, 95);
+        ui.lineWidth = 0;
+        var specTarget = getSpectateTarget();
+        if (specTarget > 0) {
+          var specName = (networkMode && playerType[specTarget] === 3 ? "Player " : "CPU ") + (specTarget + 1);
+          ui.fillText("Spectating: " + specName + "  (L/R to switch)", 600, 112);
+        } else {
+          ui.fillText("Press L/R to spectate  |  Start to exit", 600, 112);
+        }
+
+        // Elimination order panel (right side, most recent at top)
+        var lbX = 870, lbY = 140, lbW = 310, lbH = 18;
+        var lbCount = Math.min(brEliminationOrder.length, 12);
+        var p1Kills = brKillsById[0] || 0;
+
+        ui.globalAlpha = 0.7;
+        ui.fillStyle = "black";
+        ui.fillRect(lbX - 10, lbY - 5, lbW + 20, 35 + lbCount * lbH);
+        ui.globalAlpha = 1;
+        ui.textAlign = "left";
+        ui.font = "bold 16px Arial";
+        ui.fillStyle = "rgb(255, 200, 80)";
+        ui.fillText("ELIMINATIONS", lbX, lbY + 12);
+        ui.textAlign = "right";
+        ui.font = "bold 14px Arial";
+        ui.fillStyle = "rgb(180, 180, 180)";
+        ui.fillText("Your KOs: " + p1Kills, lbX + lbW, lbY + 12);
+        ui.textAlign = "left";
+        ui.font = "bold 13px Arial";
+        // Show most recent eliminations first
+        for (var li = 0; li < lbCount; li++) {
+          var entry = brEliminationOrder[brEliminationOrder.length - 1 - li];
+          var vIdx = entry.gameIndex;
+          var kIdx = entry.killedBy;
+          var vName = vIdx === 0 ? "YOU" : (networkMode && playerType[vIdx] === 3 ? "P" : "CPU ") + (vIdx + 1);
+          var kName = kIdx === 0 ? "YOU" : kIdx >= 0 ? ((networkMode && playerType[kIdx] === 3 ? "P" : "CPU ") + (kIdx + 1)) : "???";
+          var rank = entry.rank;
+          var rankStr = rank + getOrdinalSuffix(rank);
+          var isYou = vIdx === 0 || kIdx === 0;
+          var yPos = lbY + 30 + li * lbH;
+          ui.fillStyle = isYou ? "rgb(100, 255, 100)" : "rgb(180, 180, 180)";
+          ui.fillText(rankStr, lbX, yPos);
+          ui.fillText(vName, lbX + 40, yPos);
+          ui.fillStyle = isYou ? "rgb(80, 200, 80)" : "rgb(130, 130, 130)";
+          ui.fillText("by " + kName, lbX + 120, yPos);
+        }
+
         ui.restore();
       }
 
@@ -1991,6 +2058,9 @@ export function startOnlineBattleRoyale(serverUrl) {
   // Set up network callbacks
   netCallbacks.onGameStart = function(playerList) {
     console.log("Network game starting with " + playerList.length + " players");
+    brTotalPlayers = playerList.length;
+    brKillsById = {};
+    brEliminationOrder = [];
     try {
       // Map server IDs to local game indices
       // Local player is always game index 0
@@ -2078,13 +2148,22 @@ export function startOnlineBattleRoyale(serverUrl) {
       timer: 0
     });
     if (killFeed.length > 5) killFeed.shift();
-    // Track KOs for local player
-    if (killerGameIndex === 0) {
-      battleRoyaleKills[0] = (battleRoyaleKills[0] || 0) + 1;
+    // Track KOs for ALL players
+    if (killerGameIndex >= 0) {
+      brKillsById[killerGameIndex] = (brKillsById[killerGameIndex] || 0) + 1;
+      battleRoyaleKills[killerGameIndex] = (battleRoyaleKills[killerGameIndex] || 0) + 1;
     }
+    // Track elimination order
+    brEliminationOrder.push({
+      gameIndex: victimGameIndex,
+      killedBy: killerGameIndex,
+      rank: alive + 1 // alive count = remaining after this death, so rank = alive + 1
+    });
     // Mark local player as eliminated if they're the victim
     if (victimGameIndex === 0 && player[0] && player[0].stocks <= 0) {
       localPlayerEliminated = true;
+      localPlayerRank = alive + 1;
+      eliminatedTimer = 0;
     }
   };
 
@@ -2206,7 +2285,18 @@ export let battleRoyaleMode = false;
 export let battleRoyaleWinner = -1;
 export let battleRoyaleKills = [];
 export let killFeed = [];
-let localPlayerEliminated = false;
+export let localPlayerEliminated = false;
+let localPlayerRank = 0; // placement when eliminated (e.g. 15 = 15th place)
+let eliminatedTimer = 0; // frames since elimination (for auto-spectate delay)
+var brTotalPlayers = 0; // total players in the match (humans + bots)
+var brKillsById = {}; // gameIndex -> kill count (tracks all players)
+var brEliminationOrder = []; // [{gameIndex, killedBy, rank}] in order of elimination
+
+function getOrdinalSuffix(n) {
+  var s = ["th", "st", "nd", "rd"];
+  var v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
 
 // Phase 1: Send P1 to CSS to pick character, flag BR mode as pending
 export let battleRoyalePending = false;
@@ -2273,7 +2363,24 @@ function checkBattleRoyaleWinner(input) {
         disconnectFromServer();
       }
       endGame(input);
+      resetSpectate();
       return;
+    }
+  }
+
+  // Spectate controls: L/R to cycle through alive players when eliminated
+  if (localPlayerEliminated) {
+    eliminatedTimer++;
+    // Auto-spectate after 2 seconds
+    if (eliminatedTimer === 120 && getSpectateTarget() === 0) {
+      spectateNext();
+    }
+    if (input[0] && input[0][0]) {
+      if (input[0][0].r && !input[0][1].r) {
+        spectateNext();
+      } else if (input[0][0].l && !input[0][1].l) {
+        spectatePrev();
+      }
     }
   }
 
